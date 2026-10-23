@@ -878,10 +878,12 @@ async function main() {
       sfratto.tenuto, sfratto.inMemoria.join(','));
 
     // --- 9d. Corso, ateneo e area nello stesso confronto ---
-    // La pagina si ricarica (colonne di partenza: Marche Politecnica e Bari)
-    // e le tre colonne si scelgono dalle tendine come farebbe un utente:
-    // ACSAI, l'ateneo Sapienza e l'area Informatica e Tecnologie ICT.
-    await valuta(`(() => { setTimeout(() => location.reload(), 0); return true; })()`);
+    // La pagina si riapre dall'indirizzo pulito (colonne di partenza: Marche
+    // Politecnica e Bari, vista Base) e le tre colonne si scelgono dalle
+    // tendine come farebbe un utente: ACSAI, l'ateneo Sapienza e l'area
+    // Informatica e Tecnologie ICT. Non un reload: dal 23 ott 2026
+    // l'indirizzo porta il confronto, e ricaricando lo si ritroverebbe.
+    await valuta(`(() => { setTimeout(() => location.replace(location.pathname), 0); return true; })()`);
     await attendi(800);
     await aspettaInPagina(valuta,
       `document.readyState === 'complete' && document.getElementById('area-app') &&
@@ -1066,6 +1068,72 @@ async function main() {
     verifica('un vecchio link #scheda/... mostra il confronto',
       vecchioLink.confronto && !vecchioLink.vistaScheda, JSON.stringify(vecchioLink));
     await valuta(`(() => { location.hash = '#confronto'; return true; })()`);
+
+    // --- 9b. Il confronto nell'indirizzo (link profondi) ---
+    // L'indirizzo segue le colonne: aggiungendone una compare un c= in piu',
+    // togliendola sparisce.
+    const indirizzoPrima = await valuta(`({ c: new URLSearchParams(location.search).getAll('c'),
+      colonne: document.querySelectorAll('.colonna-scheda').length })`);
+    await valuta(`(() => { document.getElementById('btn-aggiungi-colonna').click(); return true; })()`);
+    const indirizzoDopo = await valuta(`new URLSearchParams(location.search).getAll('c')`);
+    await valuta(`(() => { [...document.querySelectorAll('.rimuovi-colonna')].at(-1).click(); return true; })()`);
+    const indirizzoTolta = await valuta(`new URLSearchParams(location.search).getAll('c')`);
+    verifica("l'indirizzo segue le colonne: una c= per colonna, aggiunta e tolta",
+      indirizzoPrima.c.length === indirizzoPrima.colonne && indirizzoDopo.length === indirizzoPrima.c.length + 1 &&
+      JSON.stringify(indirizzoTolta) === JSON.stringify(indirizzoPrima.c),
+      JSON.stringify({ indirizzoPrima, indirizzoDopo, indirizzoTolta }));
+
+    // Un link apre il suo confronto, in una scheda nuova come chi lo riceve.
+    const conLink = (query) => { const u = new URL(INDIRIZZO); u.search = query; return u.href; };
+    const apriLink = async (query) => {
+      const s = await apriScheda(conLink(query));
+      await aspettaInPagina(s.valuta, `document.readyState === 'complete'`, 'pagina del link caricata');
+      await aspettaInPagina(s.valuta,
+        `document.getElementById('area-app') && !document.getElementById('area-app').classList.contains('nascosto')`,
+        'app del link visibile');
+      return s;
+    };
+    const statoLink = (s) => s.valuta(`({
+      colonne: [...document.querySelectorAll('#tabella-head th')].slice(1).map((th) => th.textContent.toLowerCase()),
+      c: new URLSearchParams(location.search).getAll('c'),
+      modo: document.documentElement.dataset.modo,
+      voti: [...document.querySelectorAll('#griglia-voti .voti-riga .voto[data-colonna]')]
+        .filter((v) => v.querySelector('[data-voto]')).length,
+    })`);
+
+    const link1 = await apriLink('?c=corso:70026:0580106203100003&c=ateneo:70001');
+    await aspettaInPagina(link1.valuta,
+      `document.querySelectorAll('#tabella-head th')[1].textContent.toLowerCase().includes('applied computer science') &&
+       !document.querySelectorAll('#tabella-head th')[1].textContent.includes('caricamento')`,
+      'corso del link caricato');
+    const s1 = await statoLink(link1);
+    verifica('un link con un corso e un ateneo apre ACSAI e Marche Politecnica, coi voti',
+      s1.colonne.length === 2 && s1.colonne[0].includes('applied computer science') &&
+      s1.colonne[1].includes('marche politecnica') && s1.voti > 0 &&
+      JSON.stringify(s1.c) === JSON.stringify(['corso:70026:0580106203100003', 'ateneo:70001']) &&
+      link1.erroriConsole.length === 0,
+      JSON.stringify({ ...s1, errori: link1.erroriConsole }));
+    link1.chiudi();
+
+    // Codici inventati, sporchi o fuori posto: si scartano tutti e si parte
+    // dal confronto predefinito, senza errori.
+    const link2 = await apriLink('?c=ateneo:99999&c=corso:70026:123&c=gruppo:&c=%3Cscript%3Ealert(1)%3C%2Fscript%3E&c=corso:70001');
+    const s2 = await statoLink(link2);
+    verifica('un link con codici inventati o sporchi apre il confronto predefinito, senza errori',
+      JSON.stringify(s2.c) === JSON.stringify(['ateneo:70001', 'ateneo:70002']) && s2.colonne.length === 2 &&
+      link2.erroriConsole.length === 0,
+      JSON.stringify({ ...s2, errori: link2.erroriConsole }));
+    link2.chiudi();
+
+    // La vista Completa si apre dal link, e resta nell'indirizzo.
+    const link3 = await apriLink('?c=gruppo:11&vista=completa');
+    const s3 = await statoLink(link3);
+    const cerca3 = await link3.valuta('location.search');
+    verifica('vista=completa apre la Completa con la colonna del link',
+      s3.modo === 'completa' && s3.colonne.length === 1 && JSON.stringify(s3.c) === JSON.stringify(['gruppo:11']) &&
+      cerca3.includes('vista=completa') && link3.erroriConsole.length === 0,
+      JSON.stringify({ ...s3, cerca3, errori: link3.erroriConsole }));
+    link3.chiudi();
 
     // --- 10. Console pulita ---
     await attendi(300);

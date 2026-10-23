@@ -1181,6 +1181,8 @@ function renderTabella() {
   // Release course databases no column shows any more. Universities in use
   // are never closed, so this is safe before the queries below.
   liberaAteneiNonUsati(colonne.filter((c) => c.tipo === 'corso').map((c) => c.ateneo));
+  // Every change of columns ends up here, so the address follows them.
+  scriviIndirizzo();
 
   // The selector boxes follow the column order, which removals change.
   colonne.forEach((c, i) => {
@@ -1908,6 +1910,7 @@ function impostaModo(completa) {
   elModo.setAttribute('aria-checked', String(completa));
   document.getElementById('etichetta-base').dataset.attiva = String(!completa);
   document.getElementById('etichetta-completa').dataset.attiva = String(completa);
+  scriviIndirizzo();
 }
 elModo.addEventListener('click', () => impostaModo(elModo.getAttribute('aria-checked') !== 'true'));
 document.getElementById('etichetta-base').addEventListener('click', () => impostaModo(false));
@@ -1935,6 +1938,56 @@ elTema.addEventListener('click', () => {
 scuroDiSistema.addEventListener('change', mostraTema);
 mostraTema();
 
+// --- The comparison in the address ---
+// The address carries the columns and the view, so a comparison can be shared
+// as a link and the static pages can open one: ?c=ateneo:<code>,
+// ?c=gruppo:<code>, ?c=corso:<university>:<code>, repeated per column, and
+// vista=completa. A link is read once, at startup; afterwards the page writes
+// the address on every change, with replaceState so that Back still leaves
+// the site instead of stepping through every pick.
+
+/** Most columns a link may open, so a crafted link cannot overload the page. */
+const MAX_COLONNE_LINK = 8;
+
+/**
+ * Reads the columns of a link. Every code is checked against the real
+ * universities, groups and courses; anything else is ignored, so text from
+ * the address never reaches the page as it is.
+ *
+ * @param {URLSearchParams} parametri - Query of the address.
+ * @returns {{tipo:string, codice:string, ateneo?:string}[]} Valid columns, in link order.
+ */
+function colonneDaIndirizzo(parametri) {
+  const valide = [];
+  for (const voce of parametri.getAll('c')) {
+    if (valide.length >= MAX_COLONNE_LINK) break;
+    const [tipo, primo, secondo] = voce.split(':');
+    if (tipo === 'ateneo' && codiciAteneo.includes(primo)) {
+      valide.push({ tipo, codice: primo });
+    } else if (tipo === 'gruppo' && codiciGruppo.includes(primo)) {
+      valide.push({ tipo, codice: primo });
+    } else if (tipo === 'corso' && codiciAteneo.includes(primo) && Object.hasOwn(NOMI_CORSO[primo] ?? {}, secondo)) {
+      valide.push({ tipo, codice: secondo, ateneo: primo });
+    }
+  }
+  return valide;
+}
+
+/** Writes the current columns and view in the address, keeping the hash. */
+function scriviIndirizzo() {
+  if (!db) return;
+  // Built by hand rather than with URLSearchParams, which would write every
+  // colon as %3A; the codes are digits, so nothing needs escaping.
+  const parti = colonne
+    .filter((c) => c.codice)
+    .map((c) => (c.tipo === 'corso' ? `c=corso:${c.ateneo}:${c.codice}` : `c=${c.tipo}:${c.codice}`));
+  if (document.documentElement.dataset.modo === 'completa') parti.push('vista=completa');
+  const indirizzo = `${location.pathname}${parti.length ? `?${parti.join('&')}` : ''}${location.hash}`;
+  if (indirizzo !== `${location.pathname}${location.search}${location.hash}`) {
+    history.replaceState(history.state, '', indirizzo);
+  }
+}
+
 // --- 6. Startup ---
 
 /** Loads the dataset and initializes the comparison UI. */
@@ -1948,14 +2001,24 @@ async function avvia() {
       throw new Error('Il database è stato caricato ma non contiene codici ateneo/gruppo. Controlla il file.');
     }
 
-    // Start with two columns so the user immediately sees a populated comparison.
-    creaColonna('ateneo', codiciAteneo[0]);
-    creaColonna('ateneo', codiciAteneo[1] ?? codiciAteneo[0]);
+    // A link opens its own comparison; otherwise start with two columns so
+    // the user immediately sees a populated one.
+    const daLink = new URLSearchParams(location.search);
+    const iniziali = colonneDaIndirizzo(daLink);
+    if (iniziali.length > 0) {
+      for (const c of iniziali) creaColonna(c.tipo, c.codice, c.ateneo);
+    } else {
+      creaColonna('ateneo', codiciAteneo[0]);
+      creaColonna('ateneo', codiciAteneo[1] ?? codiciAteneo[0]);
+    }
+    if (daLink.get('vista') === 'completa') impostaModo(true);
 
     renderFiltri();
     renderSelettoreDefinizione();
     aggiornaVisibilitaVoci();
     renderTabella();
+    // Course columns from a link download their university, as a pick would.
+    for (const c of colonne) if (c.tipo === 'corso') preparaColonnaCorso(c);
 
     elStatoCaricamento.classList.add('nascosto');
     elAreaApp.classList.remove('nascosto');
