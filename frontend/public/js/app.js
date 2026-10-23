@@ -1711,7 +1711,7 @@ function creaCellaVoto(ind, dati, gruppiCorsi, misto) {
 
   if (esito.voto !== undefined) {
     const nome = NOME_TERMINI[tipo];
-    return cella('con-voto',
+    const conVoto = cella('con-voto',
       etichettaLavoro,
       el('span', {
         class: 'voto-cifra',
@@ -1722,6 +1722,9 @@ function creaCellaVoto(ind, dati, gruppiCorsi, misto) {
       creaTacche(esito.voto),
       el('span', { class: 'voto-frase' }, fraseVoto(esito.voto, nome))
     );
+    // The traffic-light colour is computed by the stylesheet from this number.
+    conVoto.style.setProperty('--voto', String(esito.voto));
+    return conVoto;
   }
   switch (esito.motivo) {
     case 'pochi-dati':
@@ -1758,8 +1761,8 @@ function aggiornaParagoneVoti(datiPerColonna, gruppiCorsi) {
       (corsi > 1 ? ' Lo stesso insieme per tutti i corsi, così i loro voti si possono confrontare.' : '')
     );
   }
-  if (tipi.has('ateneo')) parti.push(`Gli atenei con tutti i ${codiciAteneo.length} atenei.`);
-  if (tipi.has('gruppo')) parti.push(`Le aree con tutte le ${codiciGruppo.length} aree disciplinari, in tutta Italia.`);
+  if (tipi.has('ateneo')) parti.push(`Gli atenei sono messi a confronto con tutti i ${codiciAteneo.length} atenei.`);
+  if (tipi.has('gruppo')) parti.push(`Le aree sono messe a confronto con tutte le ${codiciGruppo.length} aree disciplinari, in tutta Italia.`);
   if (definizioniDisponibili.length >= 2) parti.push(`Lavoro con la definizione ${definizioneScelta} di «occupato».`);
   elParagoneVoti.textContent = parti.join(' ');
 }

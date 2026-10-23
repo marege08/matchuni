@@ -253,7 +253,35 @@ async function main() {
       base.frase === 'meglio di 8 atenei su 10' && base.ultimi === 'tra gli ultimi atenei',
       `${base.frase} | ${base.ultimi}`);
     verifica('sotto i voti c\'e\' contro chi sono calcolati, e con quale definizione',
-      base.paragone.includes('tutti i 78 atenei') && base.paragone.includes('definizione ampia'), base.paragone);
+      base.paragone.includes('Gli atenei sono messi a confronto con tutti i 78 atenei.') &&
+      base.paragone.includes('definizione ampia'), base.paragone);
+
+    // Il voto ha il colore del semaforo (scelta di Mare, 23 ott 2026): lo 0
+    // e' esattamente il rosso del tema, il 9 sta dal lato del verde. Nei due
+    // temi, perche' il rosso dello scuro e' un altro.
+    const coloriVoto = (tema) => valuta(`(() => {
+      document.documentElement.dataset.tema = '${tema}';
+      const cifra = (id, i) => document.querySelectorAll(
+        '#griglia-voti .voti-riga[data-indicatore="' + id + '"] .voto-cifra')[i];
+      // Chrome restituisce i colori di color-mix() in oklab: li si fa disegnare
+      // su un pixel e si leggono in sRGB.
+      const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+      const rgb = (colore) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = colore; ctx.fillRect(0, 0, 1, 1);
+        return [...ctx.getImageData(0, 0, 1, 1).data.slice(0, 3)]; };
+      const nove = cifra('primo-lavoro', 0);
+      const tacca = nove.parentElement.querySelector('.tacche i.piena');
+      return { zero: rgb(getComputedStyle(cifra('rifarebbero', 1)).color), nove: rgb(getComputedStyle(nove).color),
+               tacca: rgb(getComputedStyle(tacca).backgroundColor) };
+    })()`);
+    const vicino = (a, b) => a.every((x, i) => Math.abs(x - b[i]) <= 2);
+    const chiaro = await coloriVoto('chiaro');
+    const scuro = await coloriVoto('scuro');
+    await valuta(`delete document.documentElement.dataset.tema`);
+    verifica('voto a semaforo: lo 0 e\' rosso, il 9 verde, tacche dello stesso colore della cifra (chiaro e scuro)',
+      vicino(chiaro.zero, [198, 40, 40]) && vicino(scuro.zero, [242, 102, 95]) &&
+      chiaro.nove[1] > chiaro.nove[0] && scuro.nove[1] > scuro.nove[0] &&
+      vicino(chiaro.tacca, chiaro.nove) && vicino(scuro.tacca, scuro.nove),
+      JSON.stringify({ chiaro, scuro }));
 
     // --- 0b. Le tendine disegnate (js/tendina.js) ---
     // I tre select di ogni colonna restano nella pagina, nascosti, e tengono

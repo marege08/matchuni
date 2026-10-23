@@ -7,7 +7,11 @@
  * about 15.6:1, white on petrol 6.1:1. One typeface (Public Sans, designed for
  * public data sites) with tabular figures, flat sections separated by rules
  * instead of cards. Warnings are tinted, never red: they qualify a number,
- * they do not report a failure.
+ * they do not report a failure. The 0-10 score is the one exception, by
+ * Mare's choice (23 Oct 2026): it is coloured like a traffic light, red to
+ * yellow to green, because it grades a value rather than warning about it.
+ * The yellow is a dark mustard so that every step keeps at least 3:1 on the
+ * surface; the number and the ticks carry the score on their own.
  *
  * The dark theme follows the system until the header button picks one: the
  * dark values apply under prefers-color-scheme: dark unless data-tema is
@@ -50,6 +54,11 @@
   --c5: #a8662a;
   --c6: #4b5c5a;
 
+  /* Traffic light of the 0-10 score: the colour of a score is mixed from these. */
+  --voto-basso: #c62828;
+  --voto-medio: #a87a00;
+  --voto-alto: #2e7d32;
+
   --sans: 'Public Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color-scheme: light;
 }
@@ -62,6 +71,7 @@
     --tratteggio: #557270; --bordo-avviso: #4fc2bc; --binario: #2e403e; --ambra: #eba25a;
     --ombra: rgba(0, 0, 0, 0.35); --errore: #f0b89a; --errore-bg: #3a2418;
     --c1: #4fc2bc; --c2: #eba25a; --c3: #e4eeec; --c4: #8fc9c3; --c5: #f0c08a; --c6: #9fb2af;
+    --voto-basso: #f2665f; --voto-medio: #e8c547; --voto-alto: #66bb6a;
     color-scheme: dark;
   }
 }
@@ -73,6 +83,7 @@
   --tratteggio: #557270; --bordo-avviso: #4fc2bc; --binario: #2e403e; --ambra: #eba25a;
   --ombra: rgba(0, 0, 0, 0.35); --errore: #f0b89a; --errore-bg: #3a2418;
   --c1: #4fc2bc; --c2: #eba25a; --c3: #e4eeec; --c4: #8fc9c3; --c5: #f0c08a; --c6: #9fb2af;
+  --voto-basso: #f2665f; --voto-medio: #e8c547; --voto-alto: #66bb6a;
   color-scheme: dark;
 }
 
@@ -868,6 +879,20 @@ dd.valore-campione-piccolo::after {
 .tacche { display: flex; align-items: center; gap: 3px; }
 .tacche i { display: block; width: 6px; height: 15px; border-radius: 3px; background: var(--binario); }
 .tacche i.piena { background: var(--accento); }
+
+/* The score's colour, from --voto (0-10, set by app.js): red to yellow over
+   0-5, yellow to green over 6-10. clamp() picks the half. Inside @supports,
+   because a custom property holding an unknown function does not fall back:
+   it would leave the ticks transparent. Older browsers keep the petrol above. */
+@supports (color: color-mix(in oklab, red 50%, blue)) {
+  .voto.con-voto {
+    --voto-giu: color-mix(in oklab, var(--voto-medio) calc(clamp(0, var(--voto) / 5, 1) * 100%), var(--voto-basso));
+    --voto-su: color-mix(in oklab, var(--voto-alto) calc(clamp(0, (var(--voto) - 5) / 5, 1) * 100%), var(--voto-medio));
+    --voto-colore: color-mix(in oklab, var(--voto-su) calc(clamp(0, var(--voto) - 5, 1) * 100%), var(--voto-giu));
+  }
+  .voto.con-voto .voto-cifra { color: var(--voto-colore); }
+  .voto.con-voto .tacche i.piena { background: var(--voto-colore); }
+}
 
 .voto-frase,
 .voto-variante {
