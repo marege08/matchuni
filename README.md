@@ -1,11 +1,11 @@
-# AlmaLaurea — confronto dei dati sui laureati
+# lafuori — confronto dei dati sui laureati
 
 Web app gratuita per orientarsi nella scelta del corso di laurea in Italia.
 Confronta i dati ufficiali di [AlmaLaurea](https://www.almalaurea.it/) — le
 indagini *Profilo dei laureati* e *Condizione occupazionale* — fra **atenei** e
 **gruppi disciplinari**.
 
-**Sito pubblico:** <https://marege08.github.io/almalaurea/>
+**Sito pubblico:** <https://marege08.github.io/lafuori/>
 
 ## Cosa fa
 
