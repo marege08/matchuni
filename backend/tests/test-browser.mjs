@@ -16,7 +16,7 @@
 //
 // USO:  node backend/tests/test-browser.mjs
 //       node backend/tests/test-browser.mjs --porta 8123 --vedi
-//       node backend/tests/test-browser.mjs --url https://marege08.github.io/almalaurea/
+//       node backend/tests/test-browser.mjs --url https://matchuni.it/
 //         --vedi  lascia il browser visibile (utile per guardare cosa succede)
 //         --url   prova un sito gia' pubblicato invece della copia locale: le
 //                 stesse verifiche valgono in produzione, ed e' il modo di

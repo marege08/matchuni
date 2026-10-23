@@ -1,29 +1,36 @@
-# lafuori — confronto dei dati sui laureati
+# MatchUni — confronto dei dati sui laureati
 
 Web app gratuita per orientarsi nella scelta del corso di laurea in Italia.
 Confronta i dati ufficiali di [AlmaLaurea](https://www.almalaurea.it/) — le
-indagini *Profilo dei laureati* e *Condizione occupazionale* — fra **atenei** e
-**gruppi disciplinari**.
+indagini *Profilo dei laureati* e *Condizione occupazionale* — fra **atenei**,
+**gruppi disciplinari** e **corsi di laurea** (2.607 corsi triennali di 78 atenei).
 
-**Sito pubblico:** <https://marege08.github.io/lafuori/>
+**Sito pubblico:** <https://matchuni.it/>
+
+MatchUni è un progetto indipendente: non è affiliato ad AlmaLaurea, che è la
+fonte dei dati.
 
 ## Cosa fa
 
 - Metti a confronto due o più atenei / gruppi disciplinari / corsi, colonna per
-  colonna.
-- **In sintesi**: sopra la tabella, sei schede con le domande che contano di più
-  per scegliere (quanti lavorano, quanto guadagnano, quanto aspettano il primo
-  lavoro, quanto la laurea serve nel lavoro, quanti si laureano in corso, quanti
-  rifarebbero la stessa scelta). Sotto ogni titolo c'è il nome esatto della
-  domanda AlmaLaurea.
-- **Scheda del corso**: cerchi un corso di primo livello e lo vedi accanto al suo
-  ateneo e alla sua area disciplinare, con la numerosità del campione e un
-  avviso quando è troppo piccolo. Ogni scheda ha un indirizzo proprio
-  (`#scheda/<ateneo>/<corso>`) che si può condividere.
-- Scegli quali delle 101 domande vedere (regolarità negli studi, voto di laurea,
-  conoscenze linguistiche, profilo dello studente…) più la categoria **Dopo la
-  Laurea**, che è l'indagine sull'occupazione a 1/3/5 anni: tasso di
-  occupazione, retribuzione, tipo di contratto, dove si finisce a lavorare.
+  colonna. I database dei corsi sono uno per ateneo e si scaricano solo quando
+  scegli un corso di quell'ateneo.
+- **Vista Base**: sei domande che contano di più per scegliere (quanti lavorano,
+  quanto guadagnano, quanto aspettano il primo lavoro, quanto la laurea serve nel
+  lavoro, quanti si laureano in corso, quanti rifarebbero la stessa scelta), con
+  un **voto da 0 a 10** che dice dove sta il valore rispetto ai suoi simili
+  («meglio di 7 atenei su 10»), colorato a semaforo. Il voto non ha pesi
+  nascosti (`js/voto.js`) e non compare quando non sarebbe onesto: campione
+  sotto i 40 rispondenti, pochi termini di paragone, valori quasi tutti uguali.
+- **Vista Completa**: i valori pubblicati, con la sintesi delle sei domande sopra
+  la tabella e il nome esatto della domanda AlmaLaurea sotto ogni titolo. Scegli
+  quali delle 109 domande vedere, in sei gruppi (Successo e Percorso, Esperienza
+  Universitaria, Lavoro e Futuro, Dopo la Laurea, Competenze e Ambiente, Profilo
+  Studente). **Dopo la Laurea** è l'indagine sull'occupazione a 1/3/5 anni:
+  tasso di occupazione, retribuzione, tipo di contratto, dove si finisce a
+  lavorare. Il confronto si scarica in Excel.
+- Per un corso con meno di 40 rispondenti il valore è segnato come **campione
+  piccolo**.
 - Per l'occupazione scegli anche **quale definizione di «occupato»** usare —
   ampia o restrittiva. Sono le due definizioni ufficiali di AlmaLaurea, danno
   numeri diversi sulla stessa domanda, e il sito dice in chiaro cosa cambia.
@@ -50,7 +57,7 @@ menu a tendina del sito AlmaLaurea          schede statistiche pubbliche
             | tools/genera_nomi.py                       | backend/src/{harvest,pulizia}.py
             v                                            v
   js/nomi-ateneo.js, js/nomi-gruppo.js        frontend/public/almalaurea.sqlite
-                          \                    /        (29.760 righe, tidy/long)
+                          \                    /        (46.221 righe, tidy/long)
                            \                  / tools/genera_config_filtri.py
                             v                v
                         frontend/public/js/config-filtri.js
@@ -61,6 +68,13 @@ menu a tendina del sito AlmaLaurea          schede statistiche pubbliche
                                        +-- sql.js (da CDN) esegue le query nel browser
                                        +-- js/ai/  strato AI opzionale (BYOK)
 ```
+
+I **corsi** seguono una catena loro: `tools/raccogli_corsi.py` scarica le
+schede un ateneo per volta, in modo ripartibile (sono ore di download),
+`tools/prepara_db_sito.py` ne fa la versione da servire in
+`frontend/public/corsi/<ateneo>.sqlite` (78 file), `tools/genera_nomi_corso.py`
+scrive `js/nomi-corso.js` e `tools/genera_termini_paragone.py` scrive
+`js/termini-paragone.js`, i valori contro cui si calcola il voto di un corso.
 
 **Niente bundler, niente framework.** Sono moduli ES nativi serviti come file:
 si apre il sorgente e si legge quello che gira. `sql.js` arriva da CDN a
@@ -74,26 +88,37 @@ backend/
   dati-sorgente/               le tendine del sito AlmaLaurea da cui nascono i nomi
   src/harvest.py               le 93 selezioni da scaricare (78 atenei + 15 gruppi)
   src/pulizia.py               interpreta una cella: numero, oppure simbolo (* - /)
-  tests/                       test del validatore AI, prova di sql.js, test nel browser
+  tests/                       test del validatore AI, del voto, prova di sql.js, test nel browser
 frontend/public/               TUTTO ciò che viene pubblicato
-  almalaurea.sqlite            il dataset (unica fonte di verità)
+  almalaurea.sqlite            il dataset di atenei e gruppi (unica fonte di verità)
+  corsi/                       un database per ateneo, coi suoi corsi (78 file)
   index.html  style.css
-  js/app.js                    carica il DB, disegna filtri e tabella
-  js/config-filtri.js          le 101 domande       (GENERATO)
+  js/app.js                    carica il DB, disegna filtri, voti e tabella
+  js/config-filtri.js          le 109 domande       (GENERATO)
   js/nomi-ateneo.js            codice -> nome       (GENERATO)
   js/nomi-gruppo.js            codice -> nome       (GENERATO)
+  js/nomi-corso.js             codice -> nome dei 2.607 corsi (GENERATO)
+  js/termini-paragone.js       i valori contro cui si calcola il voto di un corso (GENERATO)
+  js/db-corsi.js               scarica e tiene in memoria i database dei corsi
+  js/voto.js                   il voto da 0 a 10
   js/processData.js            valore/simbolo -> testo di cella
-  js/indicatori-chiave.js      le domande del cruscotto e della scheda del corso (scritto a mano)
+  js/indicatori-chiave.js      le sei domande della vista Base e della sintesi (scritto a mano)
+  js/tendina.js  js/suggerimento.js   tendine con ricerca e fumetti disegnati dalla pagina
+  js/esporta-xlsx.js           «Scarica in Excel», senza librerie
   js/ai/                       strato AI opzionale (vedi sotto)
 tools/
-  esegui_harvest.py            scarica le schede e riempie il database
+  esegui_harvest.py            scarica le schede di atenei e gruppi e riempie il database
+  raccogli_corsi.py            scarica le schede dei corsi, un ateneo per volta
+  prepara_db_sito.py           prepara i database dei corsi da pubblicare
   scarica.py  salva.py         download di una scheda / scrittura su SQLite
   genera_config_filtri.py      rigenera config-filtri.js dal database
   genera_nomi.py               rigenera nomi-ateneo.js e nomi-gruppo.js
+  genera_nomi_corso.py         rigenera nomi-corso.js
+  genera_termini_paragone.py   rigenera termini-paragone.js
   serve.sh                     server statico locale
 ```
 
-I tre file marcati **GENERATO** non si modificano a mano: si rigenerano.
+I file marcati **GENERATO** non si modificano a mano: si rigenerano.
 
 ## Farla girare in locale
 
@@ -203,11 +228,12 @@ la pubblicazione.**
 
 ```bash
 node backend/tests/test-validatore.mjs   # il "muro" che scarta l'output AI non valido
+node backend/tests/test-voto.mjs         # il voto da 0 a 10, su casi costruiti e su dati veri
 node backend/tests/test-browser.mjs      # l'app vera, dentro Chrome headless
 
 # le stesse verifiche sul sito gia' pubblicato: e' il modo di sapere che il
 # deploy e' andato davvero, invece di dire "dovrebbe essere online"
-node backend/tests/test-browser.mjs --url https://marege08.github.io/almalaurea/
+node backend/tests/test-browser.mjs --url https://matchuni.it/
 ```
 
 `test-browser.mjs` avvia da solo un server statico e Chrome headless, aspetta
@@ -223,13 +249,17 @@ caricamento di `sql.js` sul database reale (servila con `serve.sh`).
 
 ## Dati e licenza
 
-I dati provengono dalle schede statistiche pubbliche di AlmaLaurea, licenza
+**I dati** provengono dalle schede statistiche pubbliche di AlmaLaurea, licenza
 CC BY-NC: riproduzione non commerciale con citazione della fonte, che il sito
-riporta in fondo a ogni pagina. Sono aggregati e anonimi, quindi non c'è materia
-GDPR. L'estrazione gira a frequenza educata (una pausa di 1 secondo fra le
-richieste) e con uno User-Agent che si identifica onestamente.
+riporta in fondo a ogni pagina. Restano di AlmaLaurea e la licenza del codice
+non li riguarda. Sono aggregati e anonimi, quindi non c'è materia GDPR.
+L'estrazione gira a frequenza educata (una pausa di 1 secondo fra le richieste)
+e con uno User-Agent che si identifica onestamente.
 
-Il codice è rilasciato sotto licenza MIT.
+**Il codice** è di Marco Francese, **tutti i diritti riservati** (vedi
+`LICENSE`): è visibile per consultazione, ma non si può copiare, modificare,
+distribuire o usare senza il suo consenso scritto. Fino al 23 ottobre 2026
+questo README lo dichiarava sotto licenza MIT.
 
 ## Stato
 
@@ -238,3 +268,6 @@ Il codice è rilasciato sotto licenza MIT.
 | 0 | Harvester + dataset pulito | Completata |
 | 1 | UI di confronto statica | Completata, online |
 | 2 | Strato AI BYOK (text-to-query) | Completata, online |
+| 3 | Indagine occupazionale, con le due definizioni di «occupato» | Completata, online |
+| 4 | Livello corso: 78 atenei, 2.607 corsi | Completata, online |
+| 5 | Grafica nuova: vista Base col voto 0-10, vista Completa, Excel | Online |
