@@ -401,48 +401,68 @@ textarea {
 
 /* --- Column selector --- */
 
+/* The columns and the narrow add card stay centred as a group: every added
+   column re-centres the row, and a seventh one wraps to a centred row. */
 .colonne-riga {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 1.4rem 2rem;
   align-items: start;
 }
 
 .colonne-schede { display: contents; }
 
+/* Each column position has a tone (--c1..--c6), the one its marker uses;
+   the column heading and the phone token take it from here. */
+[data-posto="0"] { --colore: var(--c1); }
+[data-posto="1"] { --colore: var(--c2); }
+[data-posto="2"] { --colore: var(--c3); }
+[data-posto="3"] { --colore: var(--c4); }
+[data-posto="4"] { --colore: var(--c5); }
+[data-posto="5"] { --colore: var(--c6); }
+
 /* One column: its marker, its number and the remove button, then the two
    drawn fields. The single grid track is minmax(0, 1fr): an auto track would
    size itself on a course name kept on one line (up to 187 characters) and
    widen the page on a phone. */
 .colonna-scheda {
+  flex: 0 1 19rem;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.55rem;
   min-width: 0;
 }
 
+/* The heading carries the column's tone, so it is large: at 20px bold the
+   lightest tone (amber, 3.3:1) still passes the contrast for large text. */
 .colonna-testa {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--tenue);
+  gap: 0.55rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--colore, var(--tenue));
 }
 
+.colonna-testa .segno { width: 1.05rem; height: 1.05rem; }
 .colonna-testa .togli { margin-left: auto; }
 
-/* The "add" field is drawn like a field, with dashed open-cornered lines. */
+/* The "add" card is drawn like a field, with dashed open-cornered lines:
+   narrow, as tall as the column fields beside it, with just a plus. */
 .aggiungi {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
+  flex: none;
+  align-self: stretch;
+  width: 4.5rem;
   min-height: 5.6rem;
-  margin-top: 1.55rem;
+  margin-top: 2.5rem;
   border: 0;
   color: var(--verde-testo);
+  font-size: 1.6rem;
   font-weight: 600;
   cursor: pointer;
   background:
@@ -463,6 +483,58 @@ textarea {
 .aggiungi::before { left: 0; }
 .aggiungi::after { right: 0; }
 .aggiungi:hover { color: var(--inchiostro); }
+
+/* --- Column tokens, on a phone only (app.js, renderGettoni) --- */
+
+.gettoni { display: none; }
+
+.gettone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  width: 4.8rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.gettone-cerchio {
+  display: grid;
+  place-items: center;
+  width: 3.4rem;
+  height: 3.4rem;
+  border: 2.5px solid var(--colore, var(--tratto));
+  border-radius: 50%;
+  background: var(--superficie);
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.gettone-nota {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--tenue);
+}
+
+.gettone-nota > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gettone-nota .segno { width: 0.65rem; height: 0.65rem; }
+
+.gettone-aggiungi .gettone-cerchio {
+  border-style: dashed;
+  border-color: var(--tratteggio);
+  color: var(--verde-testo);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.gettone-aggiungi .gettone-nota { color: var(--verde-testo); }
 
 /* --- Drawn dropdowns (js/tendina.js) ---
    A field has open corners: lines above and below, and shorter side ticks
@@ -1411,8 +1483,17 @@ td.cella-campione-piccolo { color: var(--tenue); }
   .voce-nav .testo-corto { display: inline; }
   body { padding-bottom: 5rem; }
 
-  .colonne-riga { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-  .aggiungi { min-height: 3.2rem; margin-top: 0; }
+  /* The AI needs a local model or an API key, which a phone almost never
+     has: its place in the pill goes to Feedback. */
+  #apri-ai { display: none; }
+
+  /* Tokens instead of column boxes; a box shows only in its pop-up. */
+  .colonne-riga { display: none; }
+  .gettoni { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.9rem 0.6rem; }
+  .gettoni .aggiungi { width: 100%; min-height: 3.2rem; margin-top: 0; font-size: 1rem; }
+  /* Near the top, so a field's list has room to open downwards; overflow
+     stays visible so that list is not cut at the pop-up's edge. */
+  .dlg-colonna { margin: 4.5rem auto auto; overflow: visible; }
   .tendina { width: 100%; }
 
   /* Scores stack: the question, then each column with its own name. */

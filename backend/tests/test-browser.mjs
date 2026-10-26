@@ -707,23 +707,114 @@ async function main() {
       pagina[0] <= 390 && pagina[1] <= 390, `pagina ${pagina[0]} px, finestra ${pagina[1]}`);
     // Lo stesso in Base, con la tendina del corso aperta (nomi fino a 187
     // caratteri), e la navigazione diventa una pillola in fondo allo schermo.
+    // Sul telefono le tendine stanno nel pop-up della colonna: si apre il
+    // primo gettone, poi la tendina del corso, e si misura un pannello vero
+    // (un pannello nascosto misurerebbe 0 e passerebbe senza provare niente).
     const telefonoBase = await valuta(`(() => {
       document.getElementById('etichetta-base').click();
-      document.querySelector('.colonna-scheda .campo-corso .tendina-bottone').click();
+      document.querySelector('.gettone').click();
+      document.querySelector('#dlg-colonna .campo-corso .tendina-bottone').click();
       const pannello = document.querySelector('.tendina').getBoundingClientRect();
       const nav = document.querySelector('.navigazione');
       const r = nav.getBoundingClientRect();
       const esito = { pagina: document.documentElement.scrollWidth, tendina: [Math.round(pannello.left), Math.round(pannello.right)],
+                      larga: Math.round(pannello.width),
                       navFissa: getComputedStyle(nav).position === 'fixed', navBasso: Math.round(innerHeight - r.bottom),
                       navDentro: r.left >= 0 && r.right <= innerWidth };
       document.querySelector('.tendina-cerca input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      document.getElementById('fatto-colonna').click();
       document.getElementById('etichetta-completa').click();
       return esito;
     })()`);
     verifica('su un telefono, in Base con la tendina aperta, niente si allarga e la navigazione sta in fondo',
-      telefonoBase.pagina <= 390 && telefonoBase.tendina[0] >= 0 && telefonoBase.tendina[1] <= 390 &&
+      telefonoBase.pagina <= 390 && telefonoBase.larga > 200 && telefonoBase.tendina[0] >= 0 && telefonoBase.tendina[1] <= 390 &&
       telefonoBase.navFissa && telefonoBase.navBasso >= 8 && telefonoBase.navBasso <= 40 && telefonoBase.navDentro,
       JSON.stringify(telefonoBase));
+
+    // --- 9a-tel. Gettoni e pop-up della colonna, sul telefono ---
+    // Un gettone per colonna con la sigla (ACSAI e' un corso della Sapienza:
+    // SAP, e sotto il nome del corso), piu' quello per aggiungere; le schede
+    // delle colonne non si vedono; nella pillola Feedback al posto dell'AI.
+    await attendi(200);
+    const gettoni = await valuta(`(() => {
+      const g = [...document.querySelectorAll('#gettoni .gettone:not(.gettone-aggiungi)')];
+      const visibile = (x) => !!x && getComputedStyle(x).display !== 'none' && x.getBoundingClientRect().width > 0;
+      return { n: g.length, colonne: document.querySelectorAll('.colonna-scheda').length,
+               sigle: g.map((x) => x.querySelector('.gettone-cerchio').textContent),
+               nota: g[0]?.querySelector('.gettone-nota').textContent,
+               aggiungi: !!document.querySelector('#gettoni .gettone-aggiungi'),
+               schede: visibile(document.querySelector('.colonne-riga')),
+               ai: visibile(document.getElementById('apri-ai')),
+               feedback: visibile(document.getElementById('feedback')) &&
+                 document.getElementById('feedback').getAttribute('href').startsWith('mailto:info@matchuni.it') };
+    })()`);
+    verifica('sul telefono un gettone per colonna con la sigla, schede nascoste, Feedback al posto dell\'AI',
+      gettoni.n === gettoni.colonne && gettoni.n >= 2 && gettoni.sigle[0] === 'SAP' && /informatica|computer/i.test(gettoni.nota) &&
+      gettoni.aggiungi && !gettoni.schede && !gettoni.ai && gettoni.feedback, JSON.stringify(gettoni));
+
+    // Toccare un gettone apre la SUA colonna nel pop-up; «Fatto» la rimette
+    // al suo posto fra le altre, nello stesso ordine.
+    // L'evento «close» del dialog arriva dopo close(): si aspetta un attimo
+    // prima di rileggere l'ordine.
+    const popUp = await valuta(`(async () => {
+      const ordine = () => [...document.querySelectorAll('#colonne-schede .colonna-scheda')].map((b) => b.dataset.id);
+      const prima = ordine();
+      document.querySelectorAll('#gettoni .gettone')[1].click();
+      const d = document.getElementById('dlg-colonna');
+      const dentro = d.open && d.querySelector('.colonna-scheda')?.dataset.id === prima[1];
+      document.getElementById('fatto-colonna').click();
+      await new Promise((r) => setTimeout(r, 100));
+      return { dentro, chiuso: !d.open, stessoOrdine: JSON.stringify(ordine()) === JSON.stringify(prima) };
+    })()`);
+    verifica('il gettone apre la sua colonna nel pop-up, e «Fatto» la rimette al suo posto',
+      popUp.dentro && popUp.chiuso && popUp.stessoOrdine, JSON.stringify(popUp));
+
+    // Aggiungere dal telefono apre il pop-up della colonna nuova gia' sulla
+    // ricerca; toglierla dal pop-up lo chiude e riporta le colonne di prima.
+    const daTelefono = await valuta(`(async () => {
+      const prima = document.querySelectorAll('.colonna-scheda').length;
+      document.getElementById('btn-aggiungi-uni').click();
+      const d = document.getElementById('dlg-colonna');
+      const aggiunta = { colonne: document.querySelectorAll('.colonna-scheda').length, aperto: d.open,
+                         ricerca: !!document.activeElement?.closest('.tendina-cerca') && d.contains(document.activeElement) };
+      document.querySelector('.tendina-cerca input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      d.querySelector('.rimuovi-colonna').click();
+      await new Promise((r) => setTimeout(r, 100));
+      return { prima, aggiunta, dopo: document.querySelectorAll('.colonna-scheda').length, chiuso: !d.open };
+    })()`);
+    verifica('dal telefono si aggiunge una colonna (pop-up sulla ricerca) e la si toglie dal pop-up',
+      daTelefono.aggiunta.colonne === daTelefono.prima + 1 && daTelefono.aggiunta.aperto && daTelefono.aggiunta.ricerca &&
+      daTelefono.dopo === daTelefono.prima && daTelefono.chiuso, JSON.stringify(daTelefono));
+
+    // Su desktop le colonne stanno centrate come gruppo, e il titolo «Colonna
+    // N» ha il colore del suo segno.
+    await finestra(1400, false);
+    const centrate = await valuta(`(() => {
+      const riga = document.querySelector('.colonne-riga').getBoundingClientRect();
+      const pezzi = [...document.querySelectorAll('.colonne-riga .colonna-scheda, .colonne-riga .aggiungi')].map((x) => x.getBoundingClientRect());
+      const sinistra = Math.min(...pezzi.map((r) => r.left)) - riga.left;
+      const destra = riga.right - Math.max(...pezzi.map((r) => r.right));
+      const box = document.querySelectorAll('.colonna-scheda')[1];
+      return { sinistra: Math.round(sinistra), destra: Math.round(destra),
+               titolo: getComputedStyle(box.querySelector('.numero-colonna')).color,
+               segno: getComputedStyle(box.querySelector('.segno')).color };
+    })()`);
+    verifica('su desktop le colonne stanno al centro e il titolo ha il colore del segno',
+      Math.abs(centrate.sinistra - centrate.destra) <= 2 && centrate.titolo === centrate.segno,
+      JSON.stringify(centrate));
+
+    // Ogni ateneo e ogni area hanno una sigla, e nessuna sigla e' doppia.
+    const sigle = await valuta(`(async () => {
+      const { SIGLE_ATENEO, SIGLE_GRUPPO } = await import('./js/sigle.js');
+      const { NOMI_ATENEO } = await import('./js/nomi-ateneo.js');
+      const { NOMI_GRUPPO } = await import('./js/nomi-gruppo.js');
+      const mancano = [...Object.keys(NOMI_ATENEO).filter((c) => !SIGLE_ATENEO[c]),
+                       ...Object.keys(NOMI_GRUPPO).filter((c) => !SIGLE_GRUPPO[c])];
+      const tutte = [...Object.values(SIGLE_ATENEO), ...Object.values(SIGLE_GRUPPO)];
+      return { mancano, doppie: tutte.length - new Set(tutte).size, n: tutte.length };
+    })()`);
+    verifica(`ogni ateneo e ogni area hanno una sigla, tutte diverse (${sigle.n})`,
+      sigle.mancano.length === 0 && sigle.doppie === 0 && sigle.n === 93, JSON.stringify(sigle));
     await invia('Emulation.clearDeviceMetricsOverride');
     await attendi(300);
 

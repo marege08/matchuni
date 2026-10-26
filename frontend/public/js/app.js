@@ -13,6 +13,7 @@ import { NOMI_ATENEO } from './nomi-ateneo.js';
 import { NOMI_GRUPPO } from './nomi-gruppo.js';
 import { chiediConfronto } from './ai/connettore.js';
 import { NOMI_CORSO } from './nomi-corso.js';
+import { SIGLE_ATENEO, SIGLE_GRUPPO } from './sigle.js';
 import {
   inizializzaSql,
   caricaAteneoCorsi,
@@ -122,6 +123,9 @@ const elAreaApp = document.getElementById('area-app');
 const elAreaErrore = document.getElementById('area-errore');
 const elColonneSchede = document.getElementById('colonne-schede');
 const elBtnAggiungiColonna = document.getElementById('btn-aggiungi-colonna');
+const elGettoni = document.getElementById('gettoni');
+const elDlgColonna = document.getElementById('dlg-colonna');
+const elDlgColonnaCorpo = document.getElementById('dlg-colonna-corpo');
 const elAccordionFiltri = document.getElementById('accordion-filtri');
 const elRiquadroDefinizione = document.getElementById('riquadro-definizione');
 const elSelDefinizione = document.getElementById('sel-definizione');
@@ -346,6 +350,9 @@ async function preparaColonnaCorso(stato) {
 // Refresh functions of the drawn column fields, by column id: the fields
 // show the column state, which every redraw may have changed.
 const AGGIORNA_CAMPI_COLONNA = new Map();
+// Functions opening each column's "Ateneo o area" field, by column id: a
+// column added from a phone opens its pop-up straight on the search.
+const APRI_CAMPO_ENTITA = new Map();
 
 /**
  * Creates a comparison column.
@@ -471,8 +478,11 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
   btnRimuovi.addEventListener('click', () => {
     colonne = colonne.filter((c) => c.id !== id);
     AGGIORNA_CAMPI_COLONNA.delete(id);
+    APRI_CAMPO_ENTITA.delete(id);
     contenitore.remove();
     renderTabella();
+    // Removed from its phone pop-up: nothing is left to edit there.
+    if (elDlgColonna.open && !elDlgColonnaCorpo.firstChild) elDlgColonna.close();
   });
 
   btnRimuovi.setAttribute('aria-label', 'Rimuovi questa colonna');
@@ -547,6 +557,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
     campoCorso.aggiorna();
     campoCorso.elemento.hidden = stato.tipo === 'gruppo';
   });
+  APRI_CAMPO_ENTITA.set(id, campoEntita.apri);
 
   const testa = el('div', { class: 'colonna-testa' }, postoSegno, numeroColonna, btnRimuovi);
   contenitore.append(testa, campoEntita.elemento, campoCorso.elemento, selectTipo, selectCodice, selectCorso);
@@ -555,13 +566,104 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
   if (stato.tipo === 'corso') preparaColonnaCorso(stato);
 }
 
-elBtnAggiungiColonna.addEventListener('click', () => {
+/**
+ * Adds a university column and redraws.
+ *
+ * @returns {string} Id of the new column.
+ */
+function aggiungiColonna() {
   // Prefer a university that has not already been selected, when available.
   const usati = new Set(colonne.filter((c) => c.tipo === 'ateneo').map((c) => c.codice));
   const prossimo = codiciAteneo.find((c) => !usati.has(c)) ?? codiciAteneo[0];
   creaColonna('ateneo', prossimo);
   renderTabella();
+  return colonne.at(-1).id;
+}
+
+elBtnAggiungiColonna.addEventListener('click', aggiungiColonna);
+
+// --- 2b. Column tokens and pop-up, on a phone ---
+// The column boxes take half a phone screen before the first number. There
+// each column becomes a round token with its short label (js/sigle.js), its
+// marker and one word, and touching it opens that column's box in a pop-up.
+// The box is MOVED into the pop-up and back, never copied, so the fields keep
+// one set of handlers.
+
+const TELEFONO = matchMedia('(max-width: 760px)');
+
+/**
+ * Returns the short label of a column, for its token.
+ *
+ * @param {{tipo:string,codice:string,ateneo?:string}} colonna - Column state.
+ * @returns {string} Two to four characters.
+ */
+function siglaColonna(colonna) {
+  if (colonna.tipo === 'gruppo') return SIGLE_GRUPPO[colonna.codice] ?? colonna.codice;
+  const ateneo = colonna.tipo === 'corso' ? colonna.ateneo : colonna.codice;
+  return SIGLE_ATENEO[ateneo] ?? etichettaCodice('ateneo', ateneo).slice(0, 3);
+}
+
+/**
+ * Opens a column's box in the phone pop-up.
+ *
+ * @param {string} id - Column id.
+ * @param {boolean} [cerca] - Also open the "Ateneo o area" search, for a new column.
+ */
+function apriColonna(id, cerca = false) {
+  const box = document.querySelector(`.colonna-scheda[data-id="${id}"]`);
+  if (!box) return;
+  rimettiBox();
+  elDlgColonnaCorpo.append(box);
+  if (!elDlgColonna.open) elDlgColonna.showModal();
+  if (cerca) APRI_CAMPO_ENTITA.get(id)?.();
+}
+
+/** Draws one token per column, then the add button. */
+function renderGettoni() {
+  const gettoni = colonne.map((c, i) => {
+    const nota = c.tipo === 'corso' ? etichettaColonna(c) : c.tipo === 'gruppo' ? 'Area' : 'Ateneo';
+    const descrizione = c.tipo === 'corso'
+      ? `${etichettaColonna(c)}, ${etichettaCodice('ateneo', c.ateneo)}`
+      : etichettaColonna(c);
+    const gettone = el('button',
+      { type: 'button', class: 'gettone', 'data-posto': i % FORME_SEGNO.length,
+        'aria-label': `Colonna ${i + 1}: ${descrizione}. Cambia`, title: descrizione },
+      el('span', { class: 'gettone-cerchio', 'aria-hidden': 'true' }, siglaColonna(c)),
+      el('span', { class: 'gettone-nota', 'aria-hidden': 'true' }, creaSegno(i), el('span', {}, nota)));
+    gettone.addEventListener('click', () => apriColonna(c.id));
+    return gettone;
+  });
+  // With no column the add button is the whole row; then it shrinks to a
+  // token of its own next to the others.
+  const vuoto = colonne.length === 0;
+  const aggiungi = vuoto
+    ? el('button', { type: 'button', id: 'btn-aggiungi-uni', class: 'aggiungi' }, 'Aggiungi UNI da confrontare')
+    : el('button', { type: 'button', id: 'btn-aggiungi-uni', class: 'gettone gettone-aggiungi', 'aria-label': 'Aggiungi colonna' },
+      el('span', { class: 'gettone-cerchio', 'aria-hidden': 'true' }, '+'),
+      el('span', { class: 'gettone-nota', 'aria-hidden': 'true' }, 'UNI'));
+  aggiungi.addEventListener('click', () => apriColonna(aggiungiColonna(), true));
+  elGettoni.replaceChildren(...gettoni, aggiungi);
+}
+
+/** Puts the box in the pop-up back among the others, in column order. */
+function rimettiBox() {
+  const box = elDlgColonnaCorpo.firstElementChild;
+  if (!box) return;
+  const posto = colonne.findIndex((c) => c.id === box.dataset.id);
+  const seguente = colonne.slice(posto + 1)
+    .map((c) => elColonneSchede.querySelector(`[data-id="${c.id}"]`))
+    .find(Boolean);
+  elColonneSchede.insertBefore(box, seguente ?? null);
+}
+
+elDlgColonna.addEventListener('close', rimettiBox);
+elDlgColonna.addEventListener('click', (evento) => {
+  if (evento.target === elDlgColonna) elDlgColonna.close();
 });
+document.getElementById('fatto-colonna').addEventListener('click', () => elDlgColonna.close());
+// Turning a phone sideways past the breakpoint shows the boxes again: the
+// one in the pop-up goes back first.
+TELEFONO.addEventListener('change', () => { if (!TELEFONO.matches && elDlgColonna.open) elDlgColonna.close(); });
 
 // --- 3. Question-filter accordion generated from CONFIG_FILTRI ---
 
@@ -1186,11 +1288,17 @@ function renderTabella() {
 
   // The selector boxes follow the column order, which removals change.
   colonne.forEach((c, i) => {
-    const box = elColonneSchede.querySelector(`[data-id="${c.id}"]`);
+    // Searched in the whole page: on a phone one box may be in its pop-up.
+    const box = document.querySelector(`.colonna-scheda[data-id="${c.id}"]`);
     box?.querySelector('.posto-segno').replaceChildren(creaSegno(i));
-    if (box) box.querySelector('.numero-colonna').textContent = `Colonna ${i + 1}`;
+    if (box) {
+      box.querySelector('.numero-colonna').textContent = `Colonna ${i + 1}`;
+      // The heading takes the column's tone (style.css, data-posto).
+      box.dataset.posto = String(i % FORME_SEGNO.length);
+    }
     AGGIORNA_CAMPI_COLONNA.get(c.id)?.();
   });
+  renderGettoni();
 
   if (colonne.length === 0) {
     const tr = document.createElement('tr');
