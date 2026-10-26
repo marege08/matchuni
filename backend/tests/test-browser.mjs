@@ -769,21 +769,38 @@ async function main() {
     verifica('il gettone apre la sua colonna nel pop-up, e «Fatto» la rimette al suo posto',
       popUp.dentro && popUp.chiuso && popUp.stessoOrdine, JSON.stringify(popUp));
 
-    // Aggiungere dal telefono apre il pop-up della colonna nuova gia' sulla
-    // ricerca; toglierla dal pop-up lo chiude e riporta le colonne di prima.
+    // Aggiungere dal telefono apre il pop-up su un campo VUOTO, con la lista
+    // chiusa e nessuna colonna ancora creata: chiuderlo cosi' non aggiunge
+    // niente. La colonna nasce solo scegliendo (Roma Tre, gettone RM3);
+    // toglierla dal pop-up lo chiude e riporta le colonne di prima.
     const daTelefono = await valuta(`(async () => {
-      const prima = document.querySelectorAll('.colonna-scheda').length;
-      document.getElementById('btn-aggiungi-uni').click();
+      const aspetta = (ms) => new Promise((r) => setTimeout(r, ms));
+      const conta = () => document.querySelectorAll('.colonna-scheda').length;
       const d = document.getElementById('dlg-colonna');
-      const aggiunta = { colonne: document.querySelectorAll('.colonna-scheda').length, aperto: d.open,
-                         ricerca: !!document.activeElement?.closest('.tendina-cerca') && d.contains(document.activeElement) };
-      document.querySelector('.tendina-cerca input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      const prima = conta();
+      document.getElementById('btn-aggiungi-uni').click();
+      const vuoto = { aperto: d.open, colonne: conta(), campoVuoto: !!d.querySelector('.colonna-nuova'),
+                      testo: d.querySelector('.colonna-nuova .tendina-valore')?.textContent,
+                      listaChiusa: !d.querySelector('.tendina') };
+      document.getElementById('fatto-colonna').click();
+      await aspetta(100);
+      const annullato = { colonne: conta(), chiuso: !d.open, avanzi: !!document.querySelector('.colonna-nuova') };
+      document.getElementById('btn-aggiungi-uni').click();
+      d.querySelector('.colonna-nuova .tendina-bottone').click();
+      const voce = [...d.querySelectorAll('.tendina-lista li[role="option"]')].find((li) => li.textContent.trim() === 'Roma Tre');
+      voce?.click();
+      await aspetta(100);
+      const scelta = { colonne: conta(), aperto: d.open, scheda: !!d.querySelector('.colonna-scheda .campo-corso'),
+                       sigla: [...document.querySelectorAll('#gettoni .gettone-cerchio')].map((g) => g.textContent).includes('RM3') };
       d.querySelector('.rimuovi-colonna').click();
-      await new Promise((r) => setTimeout(r, 100));
-      return { prima, aggiunta, dopo: document.querySelectorAll('.colonna-scheda').length, chiuso: !d.open };
+      await aspetta(100);
+      return { prima, vuoto, annullato, scelta, dopo: conta(), chiuso: !d.open };
     })()`);
-    verifica('dal telefono si aggiunge una colonna (pop-up sulla ricerca) e la si toglie dal pop-up',
-      daTelefono.aggiunta.colonne === daTelefono.prima + 1 && daTelefono.aggiunta.aperto && daTelefono.aggiunta.ricerca &&
+    verifica('dal telefono «+ UNI» apre un campo vuoto senza lista; la colonna nasce solo scegliendo, e si toglie dal pop-up',
+      daTelefono.vuoto.aperto && daTelefono.vuoto.colonne === daTelefono.prima && daTelefono.vuoto.campoVuoto &&
+      daTelefono.vuoto.testo === "Scegli un ateneo o un'area" && daTelefono.vuoto.listaChiusa &&
+      daTelefono.annullato.colonne === daTelefono.prima && daTelefono.annullato.chiuso && !daTelefono.annullato.avanzi &&
+      daTelefono.scelta.colonne === daTelefono.prima + 1 && daTelefono.scelta.aperto && daTelefono.scelta.scheda && daTelefono.scelta.sigla &&
       daTelefono.dopo === daTelefono.prima && daTelefono.chiuso, JSON.stringify(daTelefono));
 
     // Su desktop le colonne stanno centrate come gruppo, e il titolo «Colonna
@@ -1225,6 +1242,36 @@ async function main() {
       cerca3.includes('vista=completa') && link3.erroriConsole.length === 0,
       JSON.stringify({ ...s3, cerca3, errori: link3.erroriConsole }));
     link3.chiudi();
+
+    // --- 9c. Sul telefono si parte vuoti ---
+    // Una scheda nuova gia' a 390 px PRIMA di caricare la pagina, come un
+    // telefono vero: nessuna universita' d'esempio, il pulsante grande
+    // «Scegli uni da confrontare» e la frase sotto i Numeri senza «colonna».
+    // Un link col confronto apre comunque le sue colonne.
+    const telefono = await apriScheda('about:blank');
+    await telefono.invia('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    const caricaSuTelefono = async (query) => {
+      const u = new URL(INDIRIZZO); u.search = query;
+      await telefono.invia('Page.navigate', { url: u.href });
+      await attendi(300);
+      await aspettaInPagina(telefono.valuta,
+        `document.readyState === 'complete' && document.getElementById('area-app') && !document.getElementById('area-app').classList.contains('nascosto')`,
+        'app sul telefono visibile');
+      return telefono.valuta(`({ colonne: document.querySelectorAll('.colonna-scheda').length,
+        pulsante: document.getElementById('btn-aggiungi-uni')?.textContent,
+        voti: document.querySelector('#griglia-voti .sintesi-vuota')?.textContent ?? '',
+        c: new URLSearchParams(location.search).getAll('c') })`);
+    };
+    const vuotoTel = await caricaSuTelefono('');
+    verifica('sul telefono la pagina parte vuota, con «Scegli uni da confrontare»',
+      vuotoTel.colonne === 0 && vuotoTel.pulsante === 'Scegli uni da confrontare' &&
+      vuotoTel.voti === "Scegli un'università per vedere i voti." && vuotoTel.c.length === 0 &&
+      telefono.erroriConsole.length === 0, JSON.stringify({ ...vuotoTel, errori: telefono.erroriConsole }));
+    const linkTel = await caricaSuTelefono('?c=ateneo:70117');
+    verifica('sul telefono un link col confronto apre le sue colonne',
+      linkTel.colonne === 1 && JSON.stringify(linkTel.c) === JSON.stringify(['ateneo:70117']) &&
+      telefono.erroriConsole.length === 0, JSON.stringify({ ...linkTel, errori: telefono.erroriConsole }));
+    telefono.chiudi();
 
     // --- 10. Console pulita ---
     await attendi(300);

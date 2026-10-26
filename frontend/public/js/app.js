@@ -323,6 +323,21 @@ function codiciOrdinatiPerVisualizzazione(tipo) {
 }
 
 /**
+ * Returns the options of an "Ateneo o area" field: the universities, then the
+ * discipline groups, each sorted by name.
+ *
+ * @returns {object[]} Options for creaTendina(), valued `ateneo:<code>` or `gruppo:<code>`.
+ */
+function opzioniEntita() {
+  return [
+    ...codiciOrdinatiPerVisualizzazione('ateneo').map((c) =>
+      ({ valore: `ateneo:${c}`, testo: etichettaCodice('ateneo', c), sezione: 'Atenei' })),
+    ...codiciOrdinatiPerVisualizzazione('gruppo').map((c) =>
+      ({ valore: `gruppo:${c}`, testo: etichettaCodice('gruppo', c), sezione: 'Aree disciplinari, in tutta Italia' })),
+  ];
+}
+
+/**
  * Downloads the university of a course column, then redraws the table.
  *
  * The table renders synchronously, so a course column first appears with a
@@ -350,9 +365,6 @@ async function preparaColonnaCorso(stato) {
 // Refresh functions of the drawn column fields, by column id: the fields
 // show the column state, which every redraw may have changed.
 const AGGIORNA_CAMPI_COLONNA = new Map();
-// Functions opening each column's "Ateneo o area" field, by column id: a
-// column added from a phone opens its pop-up straight on the search.
-const APRI_CAMPO_ENTITA = new Map();
 
 /**
  * Creates a comparison column.
@@ -478,7 +490,6 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
   btnRimuovi.addEventListener('click', () => {
     colonne = colonne.filter((c) => c.id !== id);
     AGGIORNA_CAMPI_COLONNA.delete(id);
-    APRI_CAMPO_ENTITA.delete(id);
     contenitore.remove();
     renderTabella();
     // Removed from its phone pop-up: nothing is left to edit there.
@@ -511,12 +522,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
     classe: 'campo-entita',
     cerca: true,
     segnaposto: 'Cerca un ateneo o un\'area',
-    opzioni: () => [
-      ...codiciOrdinatiPerVisualizzazione('ateneo').map((c) =>
-        ({ valore: `ateneo:${c}`, testo: etichettaCodice('ateneo', c), sezione: 'Atenei' })),
-      ...codiciOrdinatiPerVisualizzazione('gruppo').map((c) =>
-        ({ valore: `gruppo:${c}`, testo: etichettaCodice('gruppo', c), sezione: 'Aree disciplinari, in tutta Italia' })),
-    ],
+    opzioni: opzioniEntita,
     valore: () => (stato.tipo === 'gruppo' ? `gruppo:${stato.codice}` : `ateneo:${ateneoDellaColonna()}`),
     testo: () => etichettaCodice(stato.tipo === 'gruppo' ? 'gruppo' : 'ateneo', ateneoDellaColonna()),
     scegli: (valore) => {
@@ -557,7 +563,6 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
     campoCorso.aggiorna();
     campoCorso.elemento.hidden = stato.tipo === 'gruppo';
   });
-  APRI_CAMPO_ENTITA.set(id, campoEntita.apri);
 
   const testa = el('div', { class: 'colonna-testa' }, postoSegno, numeroColonna, btnRimuovi);
   contenitore.append(testa, campoEntita.elemento, campoCorso.elemento, selectTipo, selectCodice, selectCorso);
@@ -566,18 +571,13 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
   if (stato.tipo === 'corso') preparaColonnaCorso(stato);
 }
 
-/**
- * Adds a university column and redraws.
- *
- * @returns {string} Id of the new column.
- */
+/** Adds a university column on a wide screen and redraws. */
 function aggiungiColonna() {
   // Prefer a university that has not already been selected, when available.
   const usati = new Set(colonne.filter((c) => c.tipo === 'ateneo').map((c) => c.codice));
   const prossimo = codiciAteneo.find((c) => !usati.has(c)) ?? codiciAteneo[0];
   creaColonna('ateneo', prossimo);
   renderTabella();
-  return colonne.at(-1).id;
 }
 
 elBtnAggiungiColonna.addEventListener('click', aggiungiColonna);
@@ -607,15 +607,43 @@ function siglaColonna(colonna) {
  * Opens a column's box in the phone pop-up.
  *
  * @param {string} id - Column id.
- * @param {boolean} [cerca] - Also open the "Ateneo o area" search, for a new column.
  */
-function apriColonna(id, cerca = false) {
+function apriColonna(id) {
   const box = document.querySelector(`.colonna-scheda[data-id="${id}"]`);
   if (!box) return;
   rimettiBox();
   elDlgColonnaCorpo.append(box);
   if (!elDlgColonna.open) elDlgColonna.showModal();
-  if (cerca) APRI_CAMPO_ENTITA.get(id)?.();
+}
+
+/**
+ * Opens the phone pop-up on an empty "Ateneo o area" field, with its list
+ * closed. The column is created only when the user picks something, so no
+ * example university ever appears and closing the pop-up adds nothing.
+ */
+function apriNuovaColonna() {
+  const campo = creaTendina({
+    etichetta: 'Ateneo o area',
+    classe: 'campo-entita',
+    cerca: true,
+    segnaposto: 'Cerca un ateneo o un\'area',
+    opzioni: opzioniEntita,
+    valore: () => '',
+    testo: () => 'Scegli un ateneo o un\'area',
+    scegli: (valore) => {
+      const [tipo, codice] = valore.split(':');
+      creaColonna(tipo, codice);
+      renderTabella();
+      // The real box takes the empty field's place, with its "Corso" field.
+      apriColonna(colonne.at(-1).id);
+    },
+  });
+  const nuova = el('div', { class: 'colonna-nuova' },
+    el('div', { class: 'colonna-testa' }, el('span', {}, `Colonna ${colonne.length + 1}`)),
+    campo.elemento);
+  rimettiBox();
+  elDlgColonnaCorpo.append(nuova);
+  if (!elDlgColonna.open) elDlgColonna.showModal();
 }
 
 /** Draws one token per column, then the add button. */
@@ -637,18 +665,25 @@ function renderGettoni() {
   // token of its own next to the others.
   const vuoto = colonne.length === 0;
   const aggiungi = vuoto
-    ? el('button', { type: 'button', id: 'btn-aggiungi-uni', class: 'aggiungi' }, 'Aggiungi UNI da confrontare')
+    ? el('button', { type: 'button', id: 'btn-aggiungi-uni', class: 'aggiungi' }, 'Scegli uni da confrontare')
     : el('button', { type: 'button', id: 'btn-aggiungi-uni', class: 'gettone gettone-aggiungi', 'aria-label': 'Aggiungi colonna' },
       el('span', { class: 'gettone-cerchio', 'aria-hidden': 'true' }, '+'),
       el('span', { class: 'gettone-nota', 'aria-hidden': 'true' }, 'UNI'));
-  aggiungi.addEventListener('click', () => apriColonna(aggiungiColonna(), true));
+  aggiungi.addEventListener('click', apriNuovaColonna);
   elGettoni.replaceChildren(...gettoni, aggiungi);
 }
 
-/** Puts the box in the pop-up back among the others, in column order. */
+/**
+ * Puts the box in the pop-up back among the others, in column order. The
+ * empty field of a column not yet chosen is simply discarded.
+ */
 function rimettiBox() {
   const box = elDlgColonnaCorpo.firstElementChild;
   if (!box) return;
+  if (!box.classList.contains('colonna-scheda')) {
+    box.remove();
+    return;
+  }
   const posto = colonne.findIndex((c) => c.id === box.dataset.id);
   const seguente = colonne.slice(posto + 1)
     .map((c) => elColonneSchede.querySelector(`[data-id="${c.id}"]`))
@@ -1886,7 +1921,10 @@ function renderVoti(datiPerColonna) {
   if (datiPerColonna.length === 0) {
     elParagoneVoti.textContent = '';
     elGrigliaVoti.replaceChildren(
-      el('p', { class: 'sintesi-vuota' }, 'Aggiungi almeno una colonna per vedere i voti.'));
+      el('p', { class: 'sintesi-vuota' }, TELEFONO.matches
+        // On a phone the page never says "colonna": the columns are tokens.
+        ? 'Scegli un\'università per vedere i voti.'
+        : 'Aggiungi almeno una colonna per vedere i voti.'));
     return;
   }
   const gruppiCorsi = [...new Set(datiPerColonna
@@ -2109,13 +2147,15 @@ async function avvia() {
       throw new Error('Il database è stato caricato ma non contiene codici ateneo/gruppo. Controlla il file.');
     }
 
-    // A link opens its own comparison; otherwise start with two columns so
-    // the user immediately sees a populated one.
+    // A link opens its own comparison; otherwise a wide screen starts with
+    // two columns so the user immediately sees a populated one. A phone
+    // starts empty: there two example universities disorient more than they
+    // show, and the page opens on "Scegli uni da confrontare".
     const daLink = new URLSearchParams(location.search);
     const iniziali = colonneDaIndirizzo(daLink);
     if (iniziali.length > 0) {
       for (const c of iniziali) creaColonna(c.tipo, c.codice, c.ateneo);
-    } else {
+    } else if (!TELEFONO.matches) {
       creaColonna('ateneo', codiciAteneo[0]);
       creaColonna('ateneo', codiciAteneo[1] ?? codiciAteneo[0]);
     }

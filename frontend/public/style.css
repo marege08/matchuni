@@ -536,6 +536,11 @@ textarea {
 
 .gettone-aggiungi .gettone-nota { color: var(--verde-testo); }
 
+/* A column not chosen yet: its heading and an empty "Ateneo o area" field,
+   spaced like a column box. */
+.colonna-nuova { display: grid; gap: 0.55rem; }
+.colonna-nuova .tendina-valore { font-weight: 500; color: var(--tenue); }
+
 /* --- Drawn dropdowns (js/tendina.js) ---
    A field has open corners: lines above and below, and shorter side ticks
    that do not touch them. The panel below it holds an optional search field
