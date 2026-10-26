@@ -1035,8 +1035,11 @@ async function main() {
         'primo-lavoro': ['pochi-dati', '5', '9'], efficacia: ['pochi-dati', '6', '8'],
         'in-corso': ['10', '3', '2'], rifarebbero: ['1', '5', 'tutti-uguali'],
       }), JSON.stringify(votiMisti.voti));
-    verifica('per il corso la riga del lavoro dice «lavorano o studiano», e i termini sono i 38 triennali ICT',
-      votiMisti.variante === 'per un corso: lavorano o studiano ancora' &&
+    // ACSAI non ha il voto sul lavoro (pochi dati), quindi nella sua cella
+    // c'e' solo «—» e niente «lavorano o studiano»: la scritta accompagna un
+    // voto. Il caso col voto e' in 9d (Economia a Roma Tre).
+    verifica('per il corso senza voto sul lavoro niente «lavorano o studiano»; i termini sono i 38 triennali ICT',
+      votiMisti.variante === undefined &&
       votiMisti.paragone.includes('Informatica e Tecnologie ICT') && votiMisti.paragone.includes('38 su quelle di studio'),
       `${votiMisti.variante} | ${votiMisti.paragone}`);
     verifica('la sintesi segue le nuove colonne: ACSAI 50,0%, Sapienza 63,9%, area 71,9%',
@@ -1271,6 +1274,65 @@ async function main() {
     verifica('sul telefono un link col confronto apre le sue colonne',
       linkTel.colonne === 1 && JSON.stringify(linkTel.c) === JSON.stringify(['ateneo:70117']) &&
       telefono.erroriConsole.length === 0, JSON.stringify({ ...linkTel, errori: telefono.erroriConsole }));
+
+    // --- 9d. Pochi dati: detto una volta per colonna, non in ogni riga ---
+    // Filosofia (L-5) a Roma Tre ha 24 intervistati sul lavoro e 38
+    // compilatori sullo studio: nessun voto. Archeologia ne ha 37 sul lavoro
+    // (niente voti di lavoro) ma voti sullo studio. Roma Tre intera ha tutto.
+    const POCHI = '?c=corso:70117:0580706200500002&c=corso:70117:0580706200100003&c=ateneo:70117';
+    const leggiPochi = (s) => s.valuta(`(() => {
+      const celle = (id) => [...document.querySelectorAll('#griglia-voti .voto[data-colonna="' + id + '"]')];
+      const colonne = [...new Set([...document.querySelectorAll('#griglia-voti .voto[data-colonna]')].map((v) => v.dataset.colonna))];
+      return {
+        righe: [...document.querySelectorAll('#voti-senza .voti-senza-riga')].map((p) => p.textContent.trim()),
+        riquadro: !document.getElementById('voti-senza').classList.contains('nascosto'),
+        trattini: colonne.map((id) => celle(id).filter((v) => v.querySelector('.voto-trattino[data-motivo="pochi-dati"]')).length),
+        vecchie: document.querySelectorAll('#griglia-voti .voto-motivo[data-motivo="pochi-dati"]').length,
+        trattiniVisibili: [...document.querySelectorAll('#griglia-voti .voto-pochi')].filter((v) => v.offsetParent !== null).length,
+        righeVuote: document.querySelectorAll('#griglia-voti .voti-riga-vuota').length,
+        righeVisibili: [...document.querySelectorAll('#griglia-voti .voti-riga:not(.voti-testa)')]
+          .filter((r) => [...r.children].some((c) => c.offsetParent !== null)).length,
+      };
+    })()`);
+    const aspettaCorsi = (s) => aspettaInPagina(s.valuta,
+      `!document.querySelector('#griglia-voti [data-motivo="caricamento"]') && document.querySelectorAll('#griglia-voti .voto').length > 0`,
+      'corsi caricati');
+    const RIGA_FILOSOFIA = 'Filosofia (L-5): niente voti, troppo poche risposte (24 sul lavoro, 38 sullo studio; ne servono 40).';
+    const RIGA_ARCHEOLOGIA = 'niente voti sulle domande di lavoro: troppo poche risposte (37; ne servono 40).';
+    const pochiPc = await apriLink(POCHI);
+    await aspettaCorsi(pochiPc);
+    const pc = await leggiPochi(pochiPc);
+    verifica('pochi dati su desktop: una riga per colonna in cima, nelle celle solo «—»',
+      pc.riquadro && pc.righe.length === 2 && pc.righe[0] === RIGA_FILOSOFIA &&
+      pc.righe[1].startsWith('Archeologia') && pc.righe[1].endsWith(RIGA_ARCHEOLOGIA) &&
+      JSON.stringify(pc.trattini) === '[6,4,0]' && pc.vecchie === 0 && pc.trattiniVisibili === 10 &&
+      pochiPc.erroriConsole.length === 0, JSON.stringify({ ...pc, errori: pochiPc.erroriConsole }));
+    pochiPc.chiudi();
+    // Un corso CON abbastanza intervistati (Economia e gestione aziendale a
+    // Roma Tre, 242) accanto al suo ateneo: voto sul lavoro, con la scritta
+    // «lavorano o studiano ancora», e nessuna riga in cima.
+    const economia = await apriLink('?c=corso:70117:0580706201800002&c=ateneo:70117');
+    await aspettaCorsi(economia);
+    const eco = await economia.valuta(`({
+      variante: document.querySelector('#griglia-voti .voti-riga[data-indicatore="occupati"] .voto-variante')?.textContent,
+      voto: document.querySelector('#griglia-voti .voti-riga[data-indicatore="occupati"] .voto [data-voto]')?.dataset.voto,
+      riquadro: !document.getElementById('voti-senza').classList.contains('nascosto') })`);
+    verifica('un corso con abbastanza dati ha il voto sul lavoro con «lavorano o studiano», e niente riga in cima',
+      eco.variante === 'per un corso: lavorano o studiano ancora' && eco.voto !== undefined && !eco.riquadro &&
+      economia.erroriConsole.length === 0, JSON.stringify({ ...eco, errori: economia.erroriConsole }));
+    economia.chiudi();
+    await caricaSuTelefono(POCHI);
+    await aspettaCorsi(telefono);
+    const tel = await leggiPochi(telefono);
+    verifica('pochi dati sul telefono: le celle senza voto spariscono, le domande con un voto restano',
+      tel.righe.length === 2 && tel.trattiniVisibili === 0 && tel.righeVuote === 0 && tel.righeVisibili === 6,
+      JSON.stringify(tel));
+    await caricaSuTelefono('?c=corso:70117:0580706200500002');
+    await aspettaCorsi(telefono);
+    const solo = await leggiPochi(telefono);
+    verifica('sul telefono, con la sola Filosofia, restano la riga in cima e nessuna domanda',
+      JSON.stringify(solo.righe) === JSON.stringify([RIGA_FILOSOFIA]) && solo.righeVuote === 6 && solo.righeVisibili === 0 &&
+      telefono.erroriConsole.length === 0, JSON.stringify({ ...solo, errori: telefono.erroriConsole }));
     telefono.chiudi();
 
     // --- 10. Console pulita ---

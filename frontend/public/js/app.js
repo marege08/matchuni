@@ -1664,6 +1664,7 @@ function renderSintesi(datiPerColonna) {
 
 const elGrigliaVoti = document.getElementById('griglia-voti');
 const elParagoneVoti = document.getElementById('paragone-voti');
+const elVotiSenza = document.getElementById('voti-senza');
 
 // For first-level graduates the employment rate is misleading: most of them
 // go on to a second-level degree and count as not working. Their work row is
@@ -1872,9 +1873,16 @@ function creaCellaVoto(ind, dati, gruppiCorsi, misto) {
     return conVoto;
   }
   switch (esito.motivo) {
-    case 'pochi-dati':
-      return senzaVoto('pochi-dati', 'Pochi dati',
-        `solo ${formattaNumero(esito.rispondenti)} ${campione?.nome ?? 'rispondenti'}: non basta per un voto`);
+    case 'pochi-dati': {
+      // Too few respondents is a fact about the column, not the question, so
+      // renderVoti() says it once above the grid; the cell keeps only a dash,
+      // with the reason in its tooltip, and a phone hides it.
+      const spiegazione = `solo ${formattaNumero(esito.rispondenti)} ${campione?.nome ?? 'rispondenti'}: non basta per un voto`;
+      return cella('senza-voto voto-pochi', el('span', {
+        class: 'voto-trattino', 'data-motivo': 'pochi-dati', 'data-indagine': ind.indagine,
+        'data-rispondenti': String(esito.rispondenti), title: spiegazione, 'aria-label': spiegazione,
+      }, '—'));
+    }
     case 'pochi-termini':
       return senzaVoto('pochi-termini', 'Niente voto', 'troppo pochi termini di paragone');
     case 'tutti-uguali':
@@ -1918,6 +1926,7 @@ function aggiornaParagoneVoti(datiPerColonna, gruppiCorsi) {
  * @param {object[]} datiPerColonna - Data of each comparison column, as renderTabella() reads it.
  */
 function renderVoti(datiPerColonna) {
+  elVotiSenza.classList.add('nascosto');
   if (datiPerColonna.length === 0) {
     elParagoneVoti.textContent = '';
     elGrigliaVoti.replaceChildren(
@@ -1951,8 +1960,57 @@ function renderVoti(datiPerColonna) {
           : etichettaUfficiale(ind))),
       ...datiPerColonna.map((dati) => creaCellaVoto(ind, dati, gruppiCorsi, misto)));
   });
+  // A question where every column lacks data has nothing to show on a phone.
+  for (const riga of righe) {
+    if ([...riga.querySelectorAll('.voto')].every((v) => v.classList.contains('voto-pochi'))) {
+      riga.classList.add('voti-riga-vuota');
+    }
+  }
   elGrigliaVoti.replaceChildren(testa, ...righe);
+  renderSenzaVoti(datiPerColonna, righe);
   aggiornaParagoneVoti(datiPerColonna, gruppiCorsi);
+}
+
+// Which questions a survey answers, for the line of a column with too few
+// respondents: "sulle domande di lavoro", and "24 sul lavoro" in a list.
+const DOMANDE_INDAGINE = {
+  occupazione: { tema: 'lavoro', breve: 'sul lavoro' },
+  profilo: { tema: 'studio', breve: 'sullo studio' },
+};
+
+/**
+ * Writes one line per column whose scores are missing for too few
+ * respondents, above the grid, instead of the same reason in every row.
+ *
+ * Respondents are counted per survey, so a column lacks either every score of
+ * a survey or none: the line names the surveys, with their respondents.
+ *
+ * @param {object[]} datiPerColonna - Data of each comparison column.
+ * @param {HTMLElement[]} righe - Rows of the grid, one per key question.
+ */
+function renderSenzaVoti(datiPerColonna, righe) {
+  const indagini = [...new Set(INDICATORI_CRUSCOTTO.map((ind) => ind.indagine))];
+  const righeTesto = [];
+  for (const { colonna, indice } of datiPerColonna) {
+    const pochi = new Map();
+    for (const riga of righe) {
+      const segno = riga.querySelector(`.voto[data-colonna="${colonna.id}"] .voto-trattino`);
+      if (segno) pochi.set(segno.dataset.indagine, Number(segno.dataset.rispondenti));
+    }
+    if (pochi.size === 0) continue;
+    const quali = indagini.filter((i) => pochi.has(i));
+    const testo = quali.length === indagini.length
+      ? `niente voti, troppo poche risposte (${quali.map((i) =>
+        `${formattaNumero(pochi.get(i))} ${DOMANDE_INDAGINE[i].breve}`).join(', ')}; ne servono ${SOGLIA_CAMPIONE_PICCOLO}).`
+      : `niente voti sulle domande di ${quali.map((i) => DOMANDE_INDAGINE[i].tema).join(' e ')}: troppo poche risposte ` +
+        `(${quali.map((i) => formattaNumero(pochi.get(i))).join(', ')}; ne servono ${SOGLIA_CAMPIONE_PICCOLO}).`;
+    const nome = etichettaColonna(colonna);
+    righeTesto.push(el('p', { class: 'voti-senza-riga', 'data-colonna': colonna.id },
+      creaSegno(indice),
+      el('span', {}, el('strong', {}, `${nome.charAt(0).toUpperCase()}${nome.slice(1)}:`), ` ${testo}`)));
+  }
+  elVotiSenza.replaceChildren(...righeTesto);
+  elVotiSenza.classList.toggle('nascosto', righeTesto.length === 0);
 }
 
 // --- 5d. Excel download of the full table ---

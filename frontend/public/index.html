@@ -108,6 +108,9 @@
          the rows on every redraw, from the same data as the table. -->
     <section class="sezione solo-base" aria-labelledby="titolo-voti">
       <h2 id="titolo-voti">Numeri</h2>
+      <!-- Columns with too few respondents for a score, one line each,
+           instead of the same reason in every row (app.js, renderSenzaVoti). -->
+      <div id="voti-senza" class="voti-senza nascosto"></div>
       <div id="griglia-voti" class="voti"></div>
       <p id="paragone-voti" class="nota"></p>
       <details class="come-voto">
