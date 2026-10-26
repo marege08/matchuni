@@ -200,6 +200,9 @@ async function main() {
           '--no-first-run',
           '--no-default-browser-check',
           `--user-data-dir=${PROFILO}`,
+          // Le prove non sono visite: il contatore di GoatCounter non si
+          // raggiunge, anche quando si prova matchuni.it (--url).
+          '--host-resolver-rules=MAP gc.zgo.at 0.0.0.0, MAP *.goatcounter.com 0.0.0.0',
           'about:blank',
         ], { stdio: 'ignore' });
         break;
@@ -1397,6 +1400,29 @@ async function main() {
     })()`);
     verifica('con «riduci animazioni» la tendina non scivola, senza si',
       ridotto === 'none' && normale === 'tendina-entra', `ridotto ${ridotto}, normale ${normale}`);
+
+    // --- 9f. Contatore di visite (GoatCounter) ---
+    // Il tag c'e' e punta all'account; il piede lo dice. In prova GoatCounter
+    // non si raggiunge (--host-resolver-rules), quindi window.goatcounter non
+    // esiste e la pagina va lo stesso; con un contatore finto, scegliere un
+    // ateneo conta un evento col suo nome.
+    const contatore = await valuta(`(async () => {
+      const tag = document.querySelector('script[data-goatcounter]');
+      const assente = typeof window.goatcounter === 'undefined';
+      const chiamate = [];
+      window.goatcounter = { count: (o) => chiamate.push(o) };
+      document.querySelector('.colonna-scheda .campo-entita .tendina-bottone').click();
+      [...document.querySelectorAll('.tendina-lista li[role="option"]')].find((li) => li.textContent.trim() === 'Roma Tre').click();
+      await new Promise((r) => setTimeout(r, 100));
+      delete window.goatcounter;
+      return { url: tag?.dataset.goatcounter, src: tag?.getAttribute('src'), async: tag?.async, assente, chiamate,
+               piede: document.querySelector('.piede').textContent.replace(/\\s+/g, ' ').includes('Contiamo le visite in forma anonima con GoatCounter, senza cookie.') };
+    })()`);
+    verifica('il contatore c\'e\', non si raggiunge in prova, e scegliere Roma Tre conta «ateneo: Roma Tre»',
+      contatore.url === 'https://matchuni.goatcounter.com/count' && contatore.src === 'https://gc.zgo.at/count.js' && contatore.async &&
+      contatore.assente && contatore.piede && contatore.chiamate.length === 1 &&
+      contatore.chiamate[0].path === 'ateneo: Roma Tre' && contatore.chiamate[0].event === true,
+      JSON.stringify(contatore));
 
     // --- 10. Console pulita ---
     await attendi(300);

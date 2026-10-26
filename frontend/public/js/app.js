@@ -309,6 +309,21 @@ function etichettaColonna(colonna) {
 }
 
 /**
+ * Counts a column the user picked as an anonymous GoatCounter event, so the
+ * dashboard shows which universities, areas and courses people look for. The
+ * counter (index.html) loads on its own and may be blocked or still loading:
+ * then nothing is counted and nothing breaks.
+ *
+ * @param {{tipo:string,codice:string,ateneo?:string}} colonna - Column just picked.
+ */
+function contaScelta(colonna) {
+  const nome = colonna.tipo === 'corso'
+    ? `corso: ${etichettaColonna(colonna)} (${etichettaCodice('ateneo', colonna.ateneo)})`
+    : `${colonna.tipo === 'gruppo' ? 'area' : 'ateneo'}: ${etichettaColonna(colonna)}`;
+  window.goatcounter?.count?.({ path: nome, title: nome, event: true });
+}
+
+/**
  * Returns codes sorted by display label.
  *
  * @param {string} tipo - Entity type.
@@ -531,6 +546,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
       // previous one would not belong to it.
       if (stato.tipo !== tipo) imposta(selectTipo, tipo);
       imposta(selectCodice, codice);
+      contaScelta(stato);
     },
   });
 
@@ -551,10 +567,11 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
       if (!corso) {
         imposta(selectTipo, 'ateneo');
         imposta(selectCodice, ateneo);
-        return;
+      } else {
+        if (stato.tipo !== 'corso') imposta(selectTipo, 'corso');
+        imposta(selectCorso, corso);
       }
-      if (stato.tipo !== 'corso') imposta(selectTipo, 'corso');
-      imposta(selectCorso, corso);
+      contaScelta(stato);
     },
   });
 
@@ -633,6 +650,7 @@ function apriNuovaColonna() {
     scegli: (valore) => {
       const [tipo, codice] = valore.split(':');
       creaColonna(tipo, codice);
+      contaScelta(colonne.at(-1));
       renderTabella();
       // The real box takes the empty field's place, with its "Corso" field.
       apriColonna(colonne.at(-1).id);
