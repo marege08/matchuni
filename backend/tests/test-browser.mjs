@@ -1335,6 +1335,69 @@ async function main() {
       telefono.erroriConsole.length === 0, JSON.stringify({ ...solo, errori: telefono.erroriConsole }));
     telefono.chiudi();
 
+    // --- 9e. Rifiniture dalla revisione web-design-guidelines (26 ott 2026) ---
+    // Caricamento ed errore annunciati; skip link fuori schermo finche' non
+    // ha il fuoco; barra del browser del colore dello sfondo, anche dopo il
+    // pulsante del tema; pop-up che non trascinano la pagina; suggerimenti
+    // di ricerca con «…» ma nome accessibile senza. Una scheda headless non
+    // e' «attiva» e non applica :focus: l'emulazione del fuoco la rende tale.
+    await invia('Emulation.setFocusEmulationEnabled', { enabled: true });
+    const rifiniture = await valuta(`(() => {
+      scrollTo(0, 0);
+      const salta = document.querySelector('a.salta');
+      const sopra = salta.getBoundingClientRect().bottom;
+      salta.focus();
+      const visibile = salta.getBoundingClientRect().top;
+      salta.blur();
+      const fondo = () => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+      const barre = () => [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => m.content);
+      const prima = { fondo: fondo(), barre: barre() };
+      document.getElementById('tema').click();
+      const dopo = { fondo: fondo(), barre: barre() };
+      document.getElementById('tema').click();
+      const campo = document.querySelector('.colonna-scheda .campo-entita .tendina-bottone');
+      campo.click();
+      const input = document.querySelector('.tendina-cerca input');
+      const ricerca = { segnaposto: input.placeholder, nome: input.getAttribute('aria-label') };
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return {
+        stato: [document.getElementById('stato-caricamento').getAttribute('role'), document.getElementById('stato-caricamento').getAttribute('aria-live')],
+        errore: document.getElementById('area-errore').getAttribute('role'),
+        salta: { href: salta.getAttribute('href'), sopra: Math.round(sopra), visibile: Math.round(visibile), bersaglio: !!document.getElementById('contenuto') },
+        prima, dopo, ricerca,
+        trascina: getComputedStyle(document.getElementById('dlg-colonna')).overscrollBehaviorY,
+      };
+    })()`);
+    await invia('Emulation.setFocusEmulationEnabled', { enabled: false });
+    verifica('caricamento ed errore annunciati, skip link nascosto finche\' non ha il fuoco',
+      rifiniture.stato[0] === 'status' && rifiniture.stato[1] === 'polite' && rifiniture.errore === 'alert' &&
+      rifiniture.salta.href === '#contenuto' && rifiniture.salta.bersaglio && rifiniture.salta.sopra <= 0 && rifiniture.salta.visibile >= 0,
+      JSON.stringify(rifiniture));
+    verifica('la barra del browser ha lo sfondo della pagina, anche dopo il pulsante del tema',
+      rifiniture.prima.barre.length === 2 && rifiniture.prima.barre.every((b) => b === rifiniture.prima.fondo) &&
+      rifiniture.dopo.fondo !== rifiniture.prima.fondo && rifiniture.dopo.barre.every((b) => b === rifiniture.dopo.fondo),
+      JSON.stringify({ prima: rifiniture.prima, dopo: rifiniture.dopo }));
+    verifica('pop-up che non trascinano la pagina; ricerca con «…» e nome accessibile senza',
+      rifiniture.trascina === 'contain' && rifiniture.ricerca.segnaposto === "Cerca un ateneo o un'area…" &&
+      rifiniture.ricerca.nome === "Cerca un ateneo o un'area", JSON.stringify({ trascina: rifiniture.trascina, ricerca: rifiniture.ricerca }));
+    // Con «riduci animazioni» la tendina si apre senza scivolare.
+    await invia('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    const ridotto = await valuta(`(() => {
+      document.querySelector('.colonna-scheda .campo-entita .tendina-bottone').click();
+      const animazione = getComputedStyle(document.querySelector('.tendina')).animationName;
+      document.querySelector('.tendina-cerca input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return animazione;
+    })()`);
+    await invia('Emulation.setEmulatedMedia', { features: [] });
+    const normale = await valuta(`(() => {
+      document.querySelector('.colonna-scheda .campo-entita .tendina-bottone').click();
+      const animazione = getComputedStyle(document.querySelector('.tendina')).animationName;
+      document.querySelector('.tendina-cerca input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return animazione;
+    })()`);
+    verifica('con «riduci animazioni» la tendina non scivola, senza si',
+      ridotto === 'none' && normale === 'tendina-entra', `ridotto ${ridotto}, normale ${normale}`);
+
     // --- 10. Console pulita ---
     await attendi(300);
     verifica('nessun errore nella console del browser',

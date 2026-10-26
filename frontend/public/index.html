@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- The phone's browser bar takes the page background (app.js keeps it in
+     step when the theme is picked with the header button). -->
+<meta name="theme-color" content="#f5f7f7" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0f1615" media="(prefers-color-scheme: dark)" />
 <title>MatchUni · Lavoro e stipendi dopo la laurea, ateneo per ateneo</title>
 <meta name="description" content="Confronta 78 atenei e 2.607 corsi con i dati ufficiali AlmaLaurea: quanti lavorano, quanto guadagnano, quanto si aspetta il primo lavoro. Gratis." />
 <!-- The official address, so search engines do not count the github.io copy
@@ -32,6 +36,9 @@
 <script src="https://cdn.jsdelivr.net/npm/sql.js@1.14.0/dist/sql-wasm.js"></script>
 </head>
 <body>
+
+<!-- For keyboard users: invisible until focused, it skips the header. -->
+<a class="salta" href="#contenuto">Vai al confronto</a>
 
 <!-- The header is a bar floating above the page. On a phone its navigation
      moves to a pill fixed at the bottom of the screen (style.css). -->
@@ -74,9 +81,9 @@
   </div>
 </header>
 
-<main class="contenitore">
+<main id="contenuto" class="contenitore" tabindex="-1">
 
-  <section id="stato-caricamento" class="banda-stato">
+  <section id="stato-caricamento" class="banda-stato" role="status" aria-live="polite">
     Caricamento dati in corso…
   </section>
 
@@ -196,7 +203,7 @@
 
   </div>
 
-  <section id="area-errore" class="banda-errore nascosto"></section>
+  <section id="area-errore" class="banda-errore nascosto" role="alert"></section>
 
 </main>
 
@@ -252,7 +259,7 @@
 
     <div class="ai-richiesta">
       <textarea id="ai-frase" rows="2" aria-label="Cosa vuoi confrontare"
-        placeholder="Es. Confronta le prospettive di lavoro tra ingegneria informatica ed economia"></textarea>
+        placeholder="Es. Confronta le prospettive di lavoro tra ingegneria informatica ed economia…"></textarea>
       <button id="ai-invia" class="ai-invia" type="button" aria-label="Chiedi">
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12 20 4l-4 16-4-7-8-1Z"/><path d="m12 13 8-9"/></svg>
       </button>
@@ -282,10 +289,10 @@
           </select>
         </div>
         <label>URL di base
-          <input id="ai-baseurl" type="text" placeholder="http://localhost:11434/v1" />
+          <input id="ai-baseurl" name="ai-baseurl" type="url" placeholder="http://localhost:11434/v1" autocomplete="off" spellcheck="false" />
         </label>
         <label>Modello
-          <input id="ai-model" type="text" placeholder="es. qwen3.6:27b, gpt-4o-mini, claude-haiku-4-5" />
+          <input id="ai-model" name="ai-model" type="text" placeholder="es. qwen3.6:27b, gpt-4o-mini, claude-haiku-4-5" autocomplete="off" spellcheck="false" />
         </label>
         <label>Chiave API (se serve)
           <input id="ai-key" type="password" placeholder="resta solo nel tuo browser" autocomplete="off" />

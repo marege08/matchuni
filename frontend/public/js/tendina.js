@@ -122,7 +122,7 @@ document.addEventListener('pointerdown', (evento) => {
  * @returns {{elemento: HTMLElement, aggiorna: () => void, apri: () => void}} The field, a function that
  *   refreshes the shown value, and one that opens the panel.
  */
-export function creaTendina({ etichetta, opzioni, valore, testo, scegli, cerca = false, segnaposto = 'Cerca', classe = '' }) {
+export function creaTendina({ etichetta, opzioni, valore, testo, scegli, cerca = false, segnaposto = 'Cerca…', classe = '' }) {
   const id = `tendina-${++contatore}`;
   const campo = document.createElement('div');
   campo.className = `campo tendina-campo ${classe}`.trim();
@@ -175,7 +175,8 @@ export function creaTendina({ etichetta, opzioni, valore, testo, scegli, cerca =
       input.setAttribute('aria-expanded', 'true');
       input.setAttribute('aria-autocomplete', 'list');
       input.setAttribute('aria-controls', lista.id);
-      input.setAttribute('aria-label', segnaposto);
+      // The ellipsis belongs to the visible hint, not to the spoken name.
+      input.setAttribute('aria-label', segnaposto.replace(/…$/, ''));
       input.placeholder = segnaposto;
       input.autocomplete = 'off';
       input.spellcheck = false;

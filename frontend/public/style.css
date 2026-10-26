@@ -115,6 +115,28 @@ a { color: var(--verde-testo); }
 
 .nascosto { display: none !important; }
 
+/* Skip link: off screen until a keyboard user reaches it. */
+.salta {
+  position: absolute;
+  z-index: 50;
+  top: 0.5rem;
+  left: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: var(--accento);
+  color: var(--su-accento);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.salta:focus { transform: none; }
+
+/* The skip target: clear of the sticky header, and no ring on a container
+   that is focused only to move the keyboard there. */
+#contenuto { scroll-margin-top: 6.5rem; }
+#contenuto:focus { outline: none; }
+
 /* --- Header: a bar floating above the page --- */
 
 /* The sticky band is transparent but fades the page out under the bar, so
@@ -1315,6 +1337,9 @@ td.cella-campione-piccolo { color: var(--tenue); }
 
 .dlg-ai::backdrop { background: rgba(10, 20, 19, 0.45); }
 
+/* Scrolling to the end of a pop-up does not carry on into the page behind. */
+.dlg-ai { overscroll-behavior: contain; }
+
 .dlg-chiudi { position: absolute; top: 0.6rem; right: 0.6rem; }
 
 .dlg-corpo {
@@ -1572,5 +1597,5 @@ td.cella-campione-piccolo { color: var(--tenue); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  * { transition: none !important; animation: none !important; }
 }

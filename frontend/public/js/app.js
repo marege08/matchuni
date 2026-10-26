@@ -521,7 +521,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
     etichetta: 'Ateneo o area',
     classe: 'campo-entita',
     cerca: true,
-    segnaposto: 'Cerca un ateneo o un\'area',
+    segnaposto: 'Cerca un ateneo o un\'area…',
     opzioni: opzioniEntita,
     valore: () => (stato.tipo === 'gruppo' ? `gruppo:${stato.codice}` : `ateneo:${ateneoDellaColonna()}`),
     testo: () => etichettaCodice(stato.tipo === 'gruppo' ? 'gruppo' : 'ateneo', ateneoDellaColonna()),
@@ -538,7 +538,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
     etichetta: 'Corso, se vuoi',
     classe: 'campo-corso facoltativo',
     cerca: true,
-    segnaposto: 'Cerca un corso',
+    segnaposto: 'Cerca un corso…',
     opzioni: () => [
       { valore: '', testo: 'Tutto l\'ateneo', nota: 'tutti i corsi e tutti i tipi di laurea' },
       ...Object.entries(NOMI_CORSO[ateneoDellaColonna()] ?? {}).map(([c, nome]) =>
@@ -626,7 +626,7 @@ function apriNuovaColonna() {
     etichetta: 'Ateneo o area',
     classe: 'campo-entita',
     cerca: true,
-    segnaposto: 'Cerca un ateneo o un\'area',
+    segnaposto: 'Cerca un ateneo o un\'area…',
     opzioni: opzioniEntita,
     valore: () => '',
     testo: () => 'Scegli un ateneo o un\'area',
@@ -2127,11 +2127,18 @@ const CHIAVE_TEMA = 'almalaurea-tema';
 const scuroDiSistema = matchMedia('(prefers-color-scheme: dark)');
 const temaAttivo = () => document.documentElement.dataset.tema || (scuroDiSistema.matches ? 'scuro' : 'chiaro');
 
-/** Writes the theme in use where the stylesheet and the button read it. */
+/**
+ * Writes the theme in use where the stylesheet and the button read it, and
+ * gives the phone's browser bar the page background.
+ */
 function mostraTema() {
   const attivo = temaAttivo();
   document.documentElement.dataset.temaAttivo = attivo;
   elTema.setAttribute('aria-label', attivo === 'scuro' ? 'Passa al tema chiaro' : 'Passa al tema scuro');
+  // The two theme-color tags in index.html follow the system; a theme picked
+  // with the button wins over both.
+  const sfondo = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  for (const meta of document.querySelectorAll('meta[name="theme-color"]')) meta.content = sfondo;
 }
 elTema.addEventListener('click', () => {
   const nuovo = temaAttivo() === 'scuro' ? 'chiaro' : 'scuro';
