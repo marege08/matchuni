@@ -204,8 +204,6 @@ a { color: var(--verde-testo); }
 
 .voce-nav svg { width: 1.05rem; height: 1.05rem; flex: none; }
 .voce-nav:hover { color: var(--inchiostro); }
-.voce-nav[aria-current="page"] { background: var(--accento); color: var(--su-accento); }
-.voce-nav .testo-corto { display: none; }
 
 /* Base / Completa: a switch between two labels. */
 .modo {
@@ -1511,8 +1509,8 @@ td.cella-campione-piccolo { color: var(--tenue); }
   .contenitore { padding-inline: 1rem; }
   main { padding-top: 1.2rem; }
 
-  /* The bar keeps the title, the switch and the theme; the navigation
-     becomes a pill fixed at the bottom of the screen. */
+  /* The bar keeps the title, the switch and the theme; Feedback becomes a
+     round button fixed in the bottom right corner, where the thumb is. */
   .testata { padding: 0.5rem 0.6rem 0.3rem; }
   .testata-barra { gap: 0.55rem; padding: 0.45rem 0.45rem 0.45rem 0.85rem; border-radius: 14px; }
   .marchio h1 { font-size: 0.98rem; line-height: 1.2; }
@@ -1522,19 +1520,36 @@ td.cella-campione-piccolo { color: var(--tenue); }
   .navigazione {
     position: fixed;
     z-index: 20;
-    left: 50%;
-    bottom: max(0.8rem, env(safe-area-inset-bottom));
-    transform: translateX(-50%);
-    box-shadow: 0 10px 30px var(--ombra);
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    padding: 0;
+    border: 0;
+    background: none;
   }
-  .voce-nav { flex-direction: column; gap: 0.1rem; padding: 0.4rem 0.95rem; font-size: 0.7rem; }
-  .voce-nav .testo-lungo { display: none; }
-  .voce-nav .testo-corto { display: inline; }
-  body { padding-bottom: 5rem; }
-
   /* The AI needs a local model or an API key, which a phone almost never
-     has: its place in the pill goes to Feedback. */
+     has: only Feedback stays. */
   #apri-ai { display: none; }
+  #feedback {
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    padding: 0;
+    background: var(--accento);
+    color: var(--su-accento);
+    box-shadow: 0 6px 20px var(--ombra);
+  }
+  #feedback svg { width: 1.35rem; height: 1.35rem; }
+  /* The label stays for screen readers; the button shows only the icon. */
+  #feedback span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* Room under the last row, so the button never sits on it. */
+  body { padding-bottom: 5rem; }
 
   /* Tokens instead of column boxes; a box shows only in its pop-up. */
   .colonne-riga { display: none; }

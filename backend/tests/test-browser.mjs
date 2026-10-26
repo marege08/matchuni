@@ -709,7 +709,7 @@ async function main() {
     verifica('su un telefono da 390 px la pagina non si allarga',
       pagina[0] <= 390 && pagina[1] <= 390, `pagina ${pagina[0]} px, finestra ${pagina[1]}`);
     // Lo stesso in Base, con la tendina del corso aperta (nomi fino a 187
-    // caratteri), e la navigazione diventa una pillola in fondo allo schermo.
+    // caratteri), e Feedback diventa un bottone tondo in basso a destra.
     // Sul telefono le tendine stanno nel pop-up della colonna: si apre il
     // primo gettone, poi la tendina del corso, e si misura un pannello vero
     // (un pannello nascosto misurerebbe 0 e passerebbe senza provare niente).
@@ -719,25 +719,27 @@ async function main() {
       document.querySelector('#dlg-colonna .campo-corso .tendina-bottone').click();
       const pannello = document.querySelector('.tendina').getBoundingClientRect();
       const nav = document.querySelector('.navigazione');
-      const r = nav.getBoundingClientRect();
+      const r = document.getElementById('feedback').getBoundingClientRect();
       const esito = { pagina: document.documentElement.scrollWidth, tendina: [Math.round(pannello.left), Math.round(pannello.right)],
                       larga: Math.round(pannello.width),
-                      navFissa: getComputedStyle(nav).position === 'fixed', navBasso: Math.round(innerHeight - r.bottom),
-                      navDentro: r.left >= 0 && r.right <= innerWidth };
+                      navFissa: getComputedStyle(nav).position === 'fixed', fbBasso: Math.round(innerHeight - r.bottom),
+                      fbDestra: Math.round(innerWidth - r.right), fbLato: [Math.round(r.width), Math.round(r.height)] };
       document.querySelector('.tendina-cerca input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       document.getElementById('fatto-colonna').click();
       document.getElementById('etichetta-completa').click();
       return esito;
     })()`);
-    verifica('su un telefono, in Base con la tendina aperta, niente si allarga e la navigazione sta in fondo',
+    verifica('su un telefono, in Base con la tendina aperta, niente si allarga e Feedback e\' un tondo in basso a destra',
       telefonoBase.pagina <= 390 && telefonoBase.larga > 200 && telefonoBase.tendina[0] >= 0 && telefonoBase.tendina[1] <= 390 &&
-      telefonoBase.navFissa && telefonoBase.navBasso >= 8 && telefonoBase.navBasso <= 40 && telefonoBase.navDentro,
+      telefonoBase.navFissa && telefonoBase.fbBasso >= 8 && telefonoBase.fbBasso <= 40 &&
+      telefonoBase.fbDestra >= 8 && telefonoBase.fbDestra <= 40 &&
+      telefonoBase.fbLato[0] >= 44 && telefonoBase.fbLato[0] === telefonoBase.fbLato[1],
       JSON.stringify(telefonoBase));
 
     // --- 9a-tel. Gettoni e pop-up della colonna, sul telefono ---
     // Un gettone per colonna con la sigla (ACSAI e' un corso della Sapienza:
     // SAP, e sotto il nome del corso), piu' quello per aggiungere; le schede
-    // delle colonne non si vedono; nella pillola Feedback al posto dell'AI.
+    // delle colonne non si vedono; Feedback si', l'AI e il tab Confronto no.
     await attendi(200);
     const gettoni = await valuta(`(() => {
       const g = [...document.querySelectorAll('#gettoni .gettone:not(.gettone-aggiungi)')];
@@ -748,12 +750,13 @@ async function main() {
                aggiungi: !!document.querySelector('#gettoni .gettone-aggiungi'),
                schede: visibile(document.querySelector('.colonne-riga')),
                ai: visibile(document.getElementById('apri-ai')),
+               confronto: !!document.getElementById('tab-confronto'),
                feedback: visibile(document.getElementById('feedback')) &&
                  document.getElementById('feedback').getAttribute('href').startsWith('mailto:info@matchuni.it') };
     })()`);
-    verifica('sul telefono un gettone per colonna con la sigla, schede nascoste, Feedback al posto dell\'AI',
+    verifica('sul telefono un gettone per colonna con la sigla, schede nascoste, solo Feedback fra gli strumenti',
       gettoni.n === gettoni.colonne && gettoni.n >= 2 && gettoni.sigle[0] === 'SAP' && /informatica|computer/i.test(gettoni.nota) &&
-      gettoni.aggiungi && !gettoni.schede && !gettoni.ai && gettoni.feedback, JSON.stringify(gettoni));
+      gettoni.aggiungi && !gettoni.schede && !gettoni.ai && !gettoni.confronto && gettoni.feedback, JSON.stringify(gettoni));
 
     // Toccare un gettone apre la SUA colonna nel pop-up; «Fatto» la rimette
     // al suo posto fra le altre, nello stesso ordine.
