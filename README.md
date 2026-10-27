@@ -115,7 +115,6 @@ tools/
   genera_nomi.py               rigenera nomi-ateneo.js e nomi-gruppo.js
   genera_nomi_corso.py         rigenera nomi-corso.js
   genera_termini_paragone.py   rigenera termini-paragone.js
-  serve.sh                     server statico locale
 ```
 
 I file marcati **GENERATO** non si modificano a mano: si rigenerano.
@@ -123,8 +122,7 @@ I file marcati **GENERATO** non si modificano a mano: si rigenerano.
 ## Farla girare in locale
 
 ```bash
-./tools/serve.sh          # poi apri http://localhost:8000
-./tools/serve.sh 8080     # su un'altra porta
+python3 -m http.server 8000 -d frontend/public   # poi apri http://localhost:8000
 ```
 
 Non aprire `index.html` con un doppio click: la pagina usa moduli ES e scarica
@@ -176,7 +174,7 @@ python3 tools/genera_config_filtri.py
 python3 tools/genera_nomi.py
 
 # 3. guarda il risultato prima di pubblicare
-./tools/serve.sh
+python3 -m http.server 8000 -d frontend/public
 node backend/tests/test-browser.mjs
 
 # 4. pubblica: il push su main fa partire il deploy da solo
@@ -245,7 +243,7 @@ sulla macchina e Node 22 ha `WebSocket` globale, quindi si pilota Chrome via
 DevTools Protocol senza installare niente. `--vedi` lascia il browser visibile.
 
 `backend/tests/test-sqljs.html` è una pagina autonoma che verifica il
-caricamento di `sql.js` sul database reale (servila con `serve.sh`).
+caricamento di `sql.js` sul database reale (servila con `python3 -m http.server`).
 
 ## Dati e licenza
 

@@ -8,3 +8,6 @@ __pycache__/
 # Sono grosse (~12 MB ciascuna) e locali: servono a tornare indietro dopo un
 # harvest andato male, non a stare nel repository.
 backend/backup-db/
+
+# Brief del progetto per le AI: resta sul PC di Mare, non va pubblicato.
+ContextForAI.md

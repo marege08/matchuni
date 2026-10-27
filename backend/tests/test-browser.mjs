@@ -809,6 +809,26 @@ async function main() {
       daTelefono.scelta.colonne === daTelefono.prima + 1 && daTelefono.scelta.aperto && daTelefono.scelta.scheda && daTelefono.scelta.sigla &&
       daTelefono.dopo === daTelefono.prima && daTelefono.chiuso, JSON.stringify(daTelefono));
 
+    // Su uno schermo touch aprire una tendina non mette il cursore nel campo
+    // Cerca, che farebbe salire la tastiera sopra la lista: lo prende solo
+    // toccandolo. Col mouse invece si scrive subito.
+    const fuocoCerca = `(() => {
+      const d = document.getElementById('dlg-colonna');
+      document.getElementById('btn-aggiungi-uni').click();
+      d.querySelector('.colonna-nuova .tendina-bottone').click();
+      const input = d.querySelector('.tendina-cerca input');
+      const r = { lista: !!input, cursore: document.activeElement === input, touch: matchMedia('(pointer: coarse)').matches };
+      document.getElementById('fatto-colonna').click();
+      return r;
+    })()`;
+    const colMouse = await valuta(fuocoCerca);
+    await invia('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    const colDito = await valuta(fuocoCerca);
+    await invia('Emulation.setTouchEmulationEnabled', { enabled: false });
+    verifica('col dito la tendina si apre senza tastiera, col mouse il cursore va subito in Cerca',
+      colMouse.lista && colMouse.cursore && !colMouse.touch && colDito.lista && !colDito.cursore && colDito.touch,
+      JSON.stringify({ colMouse, colDito }));
+
     // Su desktop le colonne stanno centrate come gruppo, e il titolo «Colonna
     // N» ha il colore del suo segno.
     await finestra(1400, false);
@@ -1167,6 +1187,28 @@ async function main() {
     })()`);
     verifica('il pop-up dell\'AI si apre e si chiude con tutti i suoi comandi',
       dialogo.aperto && dialogo.chiuso, JSON.stringify(dialogo));
+
+    // La lista di «Forma API», nella meta' destra del pop-up, si apre verso
+    // sinistra: uscendo dal bordo faceva scorrere il pop-up di lato e ne
+    // tagliava il testo a sinistra (segnalato da Mare il 27 ott 2026).
+    const formaApi = await valuta(`(() => {
+      const d = document.getElementById('dlg-ai');
+      document.getElementById('apri-ai').click();
+      d.querySelector('.ai-connessione').open = true;
+      const campo = [...d.querySelectorAll('.tendina-campo')]
+        .find((c) => c.querySelector('.campo-etichetta')?.textContent === 'Forma API');
+      campo.querySelector('.tendina-bottone').click();
+      const lista = campo.querySelector('.tendina')?.getBoundingClientRect();
+      const bordo = d.getBoundingClientRect();
+      const r = { aperta: !!lista, dentro: !!lista && lista.left >= bordo.left && lista.right <= bordo.right,
+                  scorre: d.scrollWidth > d.clientWidth, spostato: d.scrollLeft };
+      campo.querySelector('.tendina-bottone').click();
+      d.querySelector('.ai-connessione').open = false;
+      document.getElementById('chiudi-ai').click();
+      return r;
+    })()`);
+    verifica('la lista di «Forma API» resta dentro il pop-up dell\'AI, che non scorre di lato',
+      formaApi.aperta && formaApi.dentro && !formaApi.scorre && formaApi.spostato === 0, JSON.stringify(formaApi));
 
     // «Solo le principali» torna alle 8 domande.
     const principali = await valuta(`(() => {

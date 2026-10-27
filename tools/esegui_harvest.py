@@ -295,5 +295,6 @@ if __name__ == "__main__":
             "disallineata dal database:\n"
             "    python3 tools/genera_config_filtri.py\n"
             "    python3 tools/genera_nomi.py\n"
-            "Poi controlla con ./tools/serve.sh e fai commit+push (il push pubblica)."
+            "Poi controlla con python3 -m http.server 8000 -d frontend/public\n"
+            "e fai commit+push (il push pubblica)."
         )

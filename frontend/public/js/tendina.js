@@ -283,13 +283,18 @@ export function creaTendina({ etichetta, opzioni, valore, testo, scegli, cerca =
     bottone.setAttribute('aria-expanded', 'true');
     campo.append(pannello);
     aperta = { campo, bottone, pannello };
-    disegna('');
     // A field near the right edge opens its panel leftwards instead of
-    // pushing past the window.
-    if (pannello.getBoundingClientRect().right > document.documentElement.clientWidth - 8) {
+    // pushing past the window, or past the pop-up it sits in: there it would
+    // make the pop-up scroll sideways. Measured before the options are drawn,
+    // because showing the chosen one scrolls the pop-up to it.
+    const bordo = campo.closest('dialog')?.getBoundingClientRect().right ?? document.documentElement.clientWidth;
+    if (pannello.getBoundingClientRect().right > bordo - 8) {
       pannello.classList.add('a-destra');
     }
-    conFuoco.focus();
+    disegna('');
+    // On a touch screen focusing the search field would pop up the keyboard
+    // over the list: the field gets the focus only when it is tapped.
+    if (!(input && matchMedia('(pointer: coarse)').matches)) conFuoco.focus();
   }
 
   bottone.addEventListener('click', () => (campo.classList.contains('aperta') ? chiudiTendina(true) : apri()));
