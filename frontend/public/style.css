@@ -305,6 +305,9 @@ h2 {
 
 .nota-piccola { font-size: 0.78rem; }
 
+/* What to do on the page, in one line above the columns. */
+.guida { margin: 0 0 0.9rem; font-size: 0.95rem; }
+
 /* --- Loading and error status --- */
 
 .banda-stato {
@@ -1265,14 +1268,18 @@ td.cella-campione-piccolo { color: var(--tenue); }
 /* --- Footer --- */
 
 .piede {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem 2.5rem;
   margin-top: 3rem;
   padding-bottom: 1.6rem;
   color: var(--tenue);
   font-size: 0.8rem;
-  text-align: center;
 }
 
-.piede p { margin: 0 auto 0.4rem; max-width: 90ch; }
+.piede p { margin: 0 0 0.4rem; }
+.piede-link { display: flex; gap: 1.1rem; flex: none; font-weight: 600; }
 
 /* --- Tooltip (js/suggerimento.js) ---
    Drawn like the header bar: a light card with a soft shadow, and a small
@@ -1339,6 +1346,13 @@ td.cella-campione-piccolo { color: var(--tenue); }
 .dlg-ai { overscroll-behavior: contain; }
 
 .dlg-chiudi { position: absolute; top: 0.6rem; right: 0.6rem; }
+
+/* The welcome note: a title, one paragraph, one button. */
+.dlg-benvenuto { width: min(460px, calc(100% - 2rem)); }
+.benvenuto { padding: 1rem 0.3rem 0.1rem; text-align: center; }
+.benvenuto h3 { margin: 0 0 0.6rem; font-size: 1.25rem; font-weight: 800; }
+.benvenuto p { max-width: 42ch; margin: 0 auto; font-size: 0.92rem; line-height: 1.55; }
+.dlg-benvenuto .dlg-piede { justify-content: center; }
 
 .dlg-corpo {
   display: grid;
@@ -1507,6 +1521,8 @@ td.cella-campione-piccolo { color: var(--tenue); }
 
 @media (max-width: 760px) {
   .contenitore { padding-inline: 1rem; }
+  /* Links under the text, and room for the round Feedback button. */
+  .piede { flex-direction: column; padding-bottom: 5rem; }
   main { padding-top: 1.2rem; }
 
   /* The bar keeps the title, the switch and the theme; Feedback becomes a

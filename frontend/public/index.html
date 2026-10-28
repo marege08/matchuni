@@ -89,6 +89,8 @@
     <div id="vista-confronto">
 
     <section class="sezione">
+      <p class="guida"><strong>Scegli cosa confrontare:</strong> un ateneo, un'area
+        o un corso per ogni colonna. Ne aggiungi altre col +.</p>
       <!-- On a phone each column is a round token with its short label;
            touching one opens its fields in a pop-up (#dlg-colonna). app.js
            draws the tokens on every redraw; style.css shows them only on a
@@ -204,26 +206,46 @@
 
 </main>
 
+<!-- Text on the left, links on the right; on a phone the links go below.
+     The licence sentence is the condition for using the data: keep it as is. -->
 <footer class="contenitore piede">
-  <p>
-    Fonte dei dati: <a href="https://www2.almalaurea.it/" target="_blank" rel="noopener">AlmaLaurea</a>,
-    Profilo dei laureati e Condizione occupazionale 2025. Riproduzione a fini
-    non commerciali con citazione della fonte. Nessun dato è generato o
-    stimato: ogni valore proviene dalle schede statistiche ufficiali.
-  </p>
-  <p class="nota-piccola">
-    Corrispondenza codice→nome di atenei e gruppi disciplinari presa dai menu
-    a tendina ufficiali del sito AlmaLaurea, non da memoria.
-  </p>
-  <p class="nota-piccola">
-    MatchUni è un progetto indipendente, non affiliato ad AlmaLaurea.
-  </p>
-  <p class="nota-piccola">
-    Contiamo le visite in forma anonima con
-    <a href="https://www.goatcounter.com/" target="_blank" rel="noopener">GoatCounter</a>,
-    senza cookie.
+  <div class="piede-testo">
+    <p>
+      Dati ufficiali <a href="https://www2.almalaurea.it/" target="_blank" rel="noopener">AlmaLaurea</a>
+      2025 (Profilo dei laureati e Condizione occupazionale): nessun valore è
+      stimato. Riproduzione a fini non commerciali con citazione della fonte.
+    </p>
+    <p class="nota-piccola">
+      Progetto indipendente, non affiliato ad AlmaLaurea · Visite contate in
+      forma anonima con <a href="https://www.goatcounter.com/" target="_blank" rel="noopener">GoatCounter</a>,
+      senza cookie.
+    </p>
+  </div>
+  <p class="piede-link">
+    <a href="https://github.com/marege08/matchuni" target="_blank" rel="noopener">GitHub</a>
+    <a href="mailto:info@matchuni.it?subject=Feedback%20su%20MatchUni">info@matchuni.it</a>
   </p>
 </footer>
+
+<!-- Welcome note, shown once on a first plain visit (app.js). A link to one
+     comparison skips it: whoever follows it came for that number. -->
+<dialog id="dlg-benvenuto" class="dlg-ai dlg-benvenuto" aria-labelledby="benvenuto-titolo">
+  <div class="dlg-corpo">
+    <div class="benvenuto">
+      <h3 id="benvenuto-titolo">Benvenuto su MatchUni</h3>
+      <p>
+        MatchUni è un progetto indipendente, fatto da uno studente e non
+        affiliato ad AlmaLaurea. È ancora in costruzione, e ogni consiglio lo
+        migliora davvero: se qualcosa non torna o ti manca, scrivi a
+        <a href="mailto:info@matchuni.it?subject=Feedback%20su%20MatchUni">info@matchuni.it</a>
+        o usa il tasto Feedback. Grazie a chi l'ha già fatto.
+      </p>
+    </div>
+    <div class="dlg-piede">
+      <button id="inizia" class="btn-pri" type="button" autofocus>Inizia a confrontare</button>
+    </div>
+  </div>
+</dialog>
 
 <!-- One column's fields on a phone. app.js moves the column box in here when
      its token is touched and puts it back on close, so the fields and their

@@ -221,6 +221,72 @@ async function main() {
        !document.getElementById('area-app').classList.contains('nascosto')`,
       'app visibile (database caricato)');
 
+    // --- 0. Il benvenuto: alla prima visita si', sui link no, poi mai piu' ---
+    // Conta come visto appena si apre: chi ricarica non lo rivede.
+    // Il profilo di Chrome e' nuovo, quindi questa e' una prima visita vera.
+    // Il link si prova PRIMA di chiudere il benvenuto: dopo, il «visto»
+    // salvato lo nasconderebbe comunque e la prova non direbbe niente.
+    const statoBenvenuto = (v) => v(`({
+      aperto: document.getElementById('dlg-benvenuto').open,
+      fuoco: document.activeElement?.id,
+      testo: document.getElementById('dlg-benvenuto').textContent.replace(/\\s+/g, ' '),
+      posta: document.querySelector('#dlg-benvenuto a')?.getAttribute('href'),
+    })`);
+    const primaVisita = await statoBenvenuto(valuta);
+    verifica('prima visita: il benvenuto e\' aperto, col fuoco sul bottone, e dice come scriverci',
+      primaVisita.aperto && primaVisita.fuoco === 'inizia' &&
+      primaVisita.testo.includes('progetto indipendente') && primaVisita.testo.includes('Inizia a confrontare') &&
+      primaVisita.posta?.startsWith('mailto:info@matchuni.it'), JSON.stringify(primaVisita));
+    const apriPronta = async (indirizzo) => {
+      const s = await apriScheda(indirizzo);
+      await aspettaInPagina(s.valuta,
+        `document.readyState === 'complete' && document.getElementById('area-app') && !document.getElementById('area-app').classList.contains('nascosto')`,
+        'scheda nuova pronta');
+      return s;
+    };
+    const sulLink = await apriPronta(`${INDIRIZZO}?c=ateneo:70001`);
+    const benvenutoLink = await statoBenvenuto(sulLink.valuta);
+    sulLink.chiudi();
+    verifica('chi arriva da un link al confronto non vede il benvenuto, anche alla prima visita',
+      !benvenutoLink.aperto, JSON.stringify(benvenutoLink));
+    const dopoInizia = await valuta(`(() => {
+      document.getElementById('inizia').click();
+      return { aperto: document.getElementById('dlg-benvenuto').open,
+               visto: localStorage.getItem('matchuni-benvenuto-visto') };
+    })()`);
+    const seconda = await apriPronta(INDIRIZZO);
+    const benvenutoSeconda = await statoBenvenuto(seconda.valuta);
+    seconda.chiudi();
+    // Le schede aperte qui sopra lasciano dietro questa: una scheda nascosta
+    // non disegna (niente requestAnimationFrame) e le prove del telefono piu'
+    // sotto fallirebbero per questo, non per il sito.
+    await invia('Page.bringToFront');
+    verifica('«Inizia a confrontare» lo chiude e alla visita dopo non torna',
+      !dopoInizia.aperto && dopoInizia.visto === '1' && !benvenutoSeconda.aperto,
+      JSON.stringify({ dopoInizia, benvenutoSeconda }));
+
+    // La riga che dice cosa fare, e il piede largo quanto la pagina coi suoi
+    // link a destra.
+    const guidaEPiede = await valuta(`(() => {
+      const piede = document.querySelector('.piede');
+      const testo = piede.querySelector('.piede-testo').getBoundingClientRect();
+      const link = piede.querySelector('.piede-link').getBoundingClientRect();
+      return {
+        guida: document.querySelector('.guida')?.textContent.replace(/\\s+/g, ' ').trim(),
+        guidaVisibile: document.querySelector('.guida')?.offsetParent !== null,
+        link: [...piede.querySelectorAll('.piede-link a')].map((a) => a.getAttribute('href')),
+        larghezza: Math.round(piede.getBoundingClientRect().width),
+        contenitore: Math.round(document.getElementById('contenuto').getBoundingClientRect().width),
+        aDestra: link.left >= testo.right,
+        licenza: piede.textContent.replace(/\\s+/g, ' ').includes('Riproduzione a fini non commerciali con citazione della fonte.'),
+      };
+    })()`);
+    verifica('in cima la riga «Scegli cosa confrontare», nel piede la licenza e i link a GitHub e alla posta, a destra del testo',
+      guidaEPiede.guidaVisibile && guidaEPiede.guida?.startsWith('Scegli cosa confrontare:') &&
+      JSON.stringify(guidaEPiede.link) === JSON.stringify(['https://github.com/marege08/matchuni', 'mailto:info@matchuni.it?subject=Feedback%20su%20MatchUni']) &&
+      guidaEPiede.larghezza === guidaEPiede.contenitore && guidaEPiede.aDestra && guidaEPiede.licenza,
+      JSON.stringify(guidaEPiede));
+
     // --- 0a. La vista Base: un voto da 0 a 10 per domanda (js/voto.js) ---
     // All'avvio le colonne sono Marche Politecnica (70001) e Bari (70002),
     // messe a confronto con i 78 atenei. Voti attesi calcolati a parte sul
@@ -1461,7 +1527,7 @@ async function main() {
       await new Promise((r) => setTimeout(r, 100));
       delete window.goatcounter;
       return { url: tag?.dataset.goatcounter, src: tag?.getAttribute('src'), async: tag?.async, assente, chiamate,
-               piede: document.querySelector('.piede').textContent.replace(/\\s+/g, ' ').includes('Contiamo le visite in forma anonima con GoatCounter, senza cookie.') };
+               piede: document.querySelector('.piede').textContent.replace(/\\s+/g, ' ').includes('Visite contate in forma anonima con GoatCounter, senza cookie.') };
     })()`);
     verifica('il contatore c\'e\', non si raggiunge in prova, e scegliere Roma Tre conta «ateneo: Roma Tre»',
       contatore.url === 'https://matchuni.goatcounter.com/count' && contatore.src === 'https://gc.zgo.at/count.js' && contatore.async &&

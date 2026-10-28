@@ -2508,4 +2508,31 @@ if (elAiInvia) {
   elAiPreset.addEventListener('change', () => { tendinePreset.aggiorna(); tendinaForma.aggiorna(); });
 }
 
+// --- 8. Welcome note ---
+// Shown once, on a first visit to the plain page: a link to one comparison
+// skips it, since whoever follows it came for that number. It counts as seen
+// the moment it opens, so a reload never brings it back. Without storage it
+// is not shown at all: a note that cannot be remembered would come back on
+// every visit.
+
+const CHIAVE_BENVENUTO = 'matchuni-benvenuto-visto';
+const elDlgBenvenuto = document.getElementById('dlg-benvenuto');
+
+/** Opens the welcome note unless it was seen or the page came from a link. */
+function mostraBenvenuto() {
+  if (new URLSearchParams(location.search).has('c')) return;
+  try {
+    if (localStorage.getItem(CHIAVE_BENVENUTO)) return;
+    localStorage.setItem(CHIAVE_BENVENUTO, '1');
+  } catch {
+    return;
+  }
+  elDlgBenvenuto.addEventListener('click', (evento) => {
+    if (evento.target === elDlgBenvenuto) elDlgBenvenuto.close();
+  });
+  document.getElementById('inizia').addEventListener('click', () => elDlgBenvenuto.close());
+  elDlgBenvenuto.showModal();
+}
+
+mostraBenvenuto();
 avvia();
