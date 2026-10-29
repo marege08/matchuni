@@ -306,7 +306,7 @@ h2 {
 .nota-piccola { font-size: 0.78rem; }
 
 /* What to do on the page, in one line above the columns. */
-.guida { margin: 0 0 0.9rem; font-size: 0.95rem; }
+.guida { margin: 0 0 0.9rem; font-size: 0.95rem; text-align: center; }
 
 /* --- Loading and error status --- */
 
