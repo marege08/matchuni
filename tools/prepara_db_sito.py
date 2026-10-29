@@ -40,6 +40,13 @@ delle schede pubblicato sul sito e' un dato sbagliato che sembra giusto. Con
 USO
 ---
     python3 tools/prepara_db_sito.py --da ~/Documents/AlmaLaurea-raccolta-corsi
+    python3 tools/prepara_db_sito.py --da ~/Documents/AlmaLaurea-raccolta-corsi \
+        --da ~/Documents/AlmaLaurea-raccolta-ciclo-unico --out frontend/public/corsi
+
+`--da` si puo' ripetere, una volta per raccolta (triennali, ciclo unico...):
+la copia di ogni ateneo mette insieme le righe di tutte le raccolte, che
+restano distinte per codice del corso e per `tipo_corso`. Il sito scarica
+comunque un file solo per ateneo.
     python3 tools/prepara_db_sito.py --solo 70002,70048 --out /tmp/prova
     python3 tools/prepara_db_sito.py --check        # verifica senza riscrivere
 
@@ -109,6 +116,34 @@ def impronta(conn):
     return h.hexdigest(), n
 
 
+def unione_sola_lettura(percorsi):
+    """Una connessione in memoria con una vista `dati` che e' l'unione delle
+    tabelle `dati` di tutti i database dati, aperti in sola lettura.
+
+    Serve a calcolare l'impronta di quello che la copia DEVE contenere quando
+    le righe arrivano da piu' raccolte: stesso ORDER BY, stessa funzione."""
+    conn = sqlite3.connect(":memory:", uri=True)
+    pezzi = []
+    for i, percorso in enumerate(percorsi):
+        conn.execute(f"ATTACH DATABASE ? AS s{i}",
+                     (f"{percorso.resolve().as_uri()}?mode=ro",))
+        pezzi.append(f"SELECT {','.join(COLONNE)} FROM s{i}.dati")
+    conn.execute(f"CREATE TEMP VIEW dati AS {' UNION ALL '.join(pezzi)}")
+    return conn
+
+
+def chiavi_doppie(conn):
+    """Quante righe dell'unione ripetono la chiave primaria di un'altra.
+
+    In ogni raccolta la chiave primaria lo impedisce; fra due raccolte no, e la
+    copia per il sito non ha chiave primaria: due righe con la stessa chiave
+    passerebbero e il sito ne leggerebbe una a caso."""
+    tutte = conn.execute("SELECT COUNT(*) FROM dati").fetchone()[0]
+    distinte = conn.execute(
+        f"SELECT COUNT(*) FROM (SELECT DISTINCT {ORDINE} FROM dati)").fetchone()[0]
+    return tutte - distinte
+
+
 def apri_sola_lettura(percorso):
     # as_uri() codifica ? # % nel percorso: la stessa trappola gia' pagata in
     # raccogli_corsi.py, dove un '?' apriva un ALTRO file.
@@ -132,9 +167,9 @@ def stato_ateneo(conn):
     return corsi, fatte, inesistenti, attese
 
 
-def copia(sorgente, destinazione):
-    """Scrive la copia compatta e ne verifica il contenuto. Ritorna
-    (righe, peso_prima, peso_dopo).
+def copia(sorgenti, destinazione):
+    """Scrive la copia compatta di uno o piu' database dello stesso ateneo e ne
+    verifica il contenuto. Ritorna (righe, peso_prima, peso_dopo).
 
     Scrive su un file temporaneo e rinomina solo alla fine: un'interruzione a
     meta' lascia un `.parziale` evidente invece di un database mutilato col
@@ -142,9 +177,12 @@ def copia(sorgente, destinazione):
     temp = destinazione.with_suffix(".sqlite.parziale")
     temp.unlink(missing_ok=True)
 
-    letto = apri_sola_lettura(sorgente)
+    letto = unione_sola_lettura(sorgenti)
     scritto = sqlite3.connect(str(temp))
     try:
+        doppie = chiavi_doppie(letto)
+        if doppie:
+            raise RuntimeError(f"{doppie} righe con la stessa chiave in raccolte diverse")
         scritto.execute(schema_senza_indice())
         segnaposto = ",".join("?" * len(COLONNE))
         sql = f"INSERT INTO dati ({','.join(COLONNE)}) VALUES ({segnaposto})"
@@ -175,18 +213,18 @@ def copia(sorgente, destinazione):
             f"({n_ottenuto} righe contro {n_atteso}; "
             f"impronta {ottenuto[:12]} contro {atteso[:12]})")
 
-    peso_prima = sorgente.stat().st_size
+    peso_prima = sum(s.stat().st_size for s in sorgenti)
     peso_dopo = temp.stat().st_size
     temp.replace(destinazione)
     return n_atteso, peso_prima, peso_dopo
 
 
-def verifica(sorgente, destinazione):
+def verifica(sorgenti, destinazione):
     """Il `--check`: la copia esiste e contiene gli stessi dati? Non riscrive
     niente. Ritorna (esito, messaggio)."""
     if not destinazione.exists():
         return False, "manca"
-    a = apri_sola_lettura(sorgente)
+    a = unione_sola_lettura(sorgenti)
     b = apri_sola_lettura(destinazione)
     try:
         indici = b.execute("SELECT COUNT(*) FROM sqlite_master "
@@ -212,8 +250,9 @@ def verifica(sorgente, destinazione):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--da", default=str(CARTELLA_DA),
-                   help=f"cartella dei database della raccolta (default: {CARTELLA_DA})")
+    p.add_argument("--da", action="append",
+                   help="cartella dei database di una raccolta; si puo' ripetere "
+                        f"(default: {CARTELLA_DA})")
     p.add_argument("--out", default=str(CARTELLA_OUT),
                    help=f"cartella delle copie per il sito (default: {CARTELLA_OUT})")
     p.add_argument("--solo", help="codici separati da virgola, es. 70002,70048")
@@ -224,9 +263,9 @@ def main():
     a = p.parse_args()
 
     # Relativo = dalla radice del repository, come --out in raccogli_corsi.py.
-    da = Path(a.da)
-    out = Path(a.out)
-    da = da if da.is_absolute() else RADICE / da
+    cartelle = [Path(x).expanduser() for x in (a.da or [str(CARTELLA_DA)])]
+    cartelle = [d if d.is_absolute() else RADICE / d for d in cartelle]
+    out = Path(a.out).expanduser()
     out = out if out.is_absolute() else RADICE / out
 
     # Il database che il sito pubblica oggi e' `frontend/public/almalaurea.sqlite`,
@@ -246,24 +285,30 @@ def main():
               file=sys.stderr)
         return 2
 
-    if not da.is_dir():
-        print(f"La cartella di partenza non esiste: {da}", file=sys.stderr)
-        return 2
+    for da in cartelle:
+        if not da.is_dir():
+            print(f"La cartella di partenza non esiste: {da}", file=sys.stderr)
+            return 2
 
-    sorgenti = sorted(da.glob("*.sqlite"))
+    # ateneo -> i suoi database, uno per raccolta che lo contiene.
+    per_ateneo = {}
+    for da in cartelle:
+        for s in sorted(da.glob("*.sqlite")):
+            per_ateneo.setdefault(s.stem, []).append(s)
     if a.solo:
         voluti = {x.strip() for x in a.solo.split(",") if x.strip()}
-        sorgenti = [s for s in sorgenti if s.stem in voluti]
-        mancanti = voluti - {s.stem for s in sorgenti}
+        mancanti = voluti - set(per_ateneo)
         if mancanti:
-            print(f"Database non trovati in {da}: {sorted(mancanti)}", file=sys.stderr)
+            print(f"Database non trovati: {sorted(mancanti)}", file=sys.stderr)
             return 2
-    if not sorgenti:
-        print(f"Nessun database in {da}", file=sys.stderr)
+        per_ateneo = {k: v for k, v in per_ateneo.items() if k in voluti}
+    if not per_ateneo:
+        print("Nessun database nelle cartelle di partenza", file=sys.stderr)
         return 2
 
-    print(f"{'Verifica' if a.check else 'Preparazione'} — {len(sorgenti)} database")
-    print(f"  da:  {da}")
+    print(f"{'Verifica' if a.check else 'Preparazione'} — {len(per_ateneo)} atenei")
+    for da in cartelle:
+        print(f"  da:  {da}")
     print(f"  a:   {out}\n")
 
     if not a.check:
@@ -271,35 +316,38 @@ def main():
 
     fatti = saltati = rotti = 0
     tot_prima = tot_dopo = tot_righe = 0
-    for s in sorgenti:
-        destinazione = out / s.name
+    for codice, sorgenti in sorted(per_ateneo.items()):
+        destinazione = out / f"{codice}.sqlite"
         if a.check:
-            ok, messaggio = verifica(s, destinazione)
-            print(f"  {s.stem}: {'ok' if ok else 'ROTTO'} — {messaggio}")
+            ok, messaggio = verifica(sorgenti, destinazione)
+            print(f"  {codice}: {'ok' if ok else 'ROTTO'} — {messaggio}")
             fatti += ok
             rotti += not ok
             continue
 
-        c = apri_sola_lettura(s)
-        try:
-            corsi, schede, inesistenti, attese = stato_ateneo(c)
-        finally:
-            c.close()
-        residue = attese - schede - inesistenti
+        residue = attese = 0
+        for s in sorgenti:
+            c = apri_sola_lettura(s)
+            try:
+                corsi, schede, inesistenti, attese_s = stato_ateneo(c)
+            finally:
+                c.close()
+            residue += attese_s - schede - inesistenti
+            attese += attese_s
         if residue > 0 and not a.anche_parziali:
-            print(f"  {s.stem}: SALTATO — {residue} schede ancora da raccogliere "
+            print(f"  {codice}: SALTATO — {residue} schede ancora da raccogliere "
                   f"su {attese} (--anche-parziali per forzare)")
             saltati += 1
             continue
 
         try:
-            righe, prima, dopo = copia(s, destinazione)
+            righe, prima, dopo = copia(sorgenti, destinazione)
         except Exception as e:
-            print(f"  {s.stem}: FALLITO — {type(e).__name__}: {e}")
+            print(f"  {codice}: FALLITO — {type(e).__name__}: {e}")
             rotti += 1
             continue
         avviso = f"  [PARZIALE: {residue} schede mancanti]" if residue > 0 else ""
-        print(f"  {s.stem}: {righe:6d} righe · {prima / 1e6:5.1f} MB -> "
+        print(f"  {codice}: {righe:6d} righe · {prima / 1e6:5.1f} MB -> "
               f"{dopo / 1e6:5.1f} MB  (-{100 * (prima - dopo) / prima:4.1f}%)"
               f"{avviso}")
         fatti += 1

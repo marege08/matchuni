@@ -661,8 +661,9 @@ async function main() {
       return { righe, quanti, stessa: db === ancora, condiviso: a === b,
                rifiutato, inMemoria, ancoraViva, max: m.MAX_ATENEI_APERTI };
     })()`);
-    verifica('Sapienza carica 67.544 righe su 133 corsi',
-      corsi.righe === 67544 && corsi.quanti === 133, `${corsi.righe} righe, ${corsi.quanti} corsi`);
+    // 133 triennali e 17 corsi a ciclo unico, nello stesso file dell'ateneo.
+    verifica('Sapienza carica 76.027 righe su 150 corsi',
+      corsi.righe === 76027 && corsi.quanti === 150, `${corsi.righe} righe, ${corsi.quanti} corsi`);
     const dopo = await scaricatiCorsi();
     verifica('il secondo caricamento dello stesso ateneo non riscarica',
       corsi.stessa && dopo.filter((f) => f === '70026.sqlite').length === 1, dopo.join(','));
@@ -673,7 +674,7 @@ async function main() {
       corsi.rifiutato);
     verifica('liberando la memoria restano al massimo 4 atenei, e mai quello in uso',
       corsi.inMemoria.length === corsi.max && corsi.inMemoria.includes('70026') &&
-        corsi.ancoraViva === 67544,
+        corsi.ancoraViva === 76027,
       corsi.inMemoria.join(','));
 
     // --- 8. I nomi dei corsi (js/nomi-corso.js) ---
@@ -693,7 +694,7 @@ async function main() {
     })()`);
     verifica('i nomi coprono 78 atenei, tutti veri',
       nomi.atenei === 78 && nomi.soloAteneiVeri, `${nomi.atenei} atenei`);
-    verifica('i nomi coprono 2.607 corsi', nomi.corsi === 2607, `${nomi.corsi} corsi`);
+    verifica('i nomi coprono 3.012 corsi (2.607 triennali e 405 a ciclo unico)', nomi.corsi === 3012, `${nomi.corsi} corsi`);
     verifica('ACSAI ha il suo nome sotto Sapienza',
       String(nomi.acsai).startsWith('applied computer science and artificial intelligence'),
       String(nomi.acsai));
@@ -1435,6 +1436,72 @@ async function main() {
       eco.variante === 'per un corso: lavorano o studiano ancora' && eco.voto !== undefined && !eco.riquadro &&
       economia.erroriConsole.length === 0, JSON.stringify({ ...eco, errori: economia.erroriConsole }));
     economia.chiudi();
+
+    // Un corso a CICLO UNICO (Medicina a Bologna) accanto al suo ateneo: il
+    // voto sul lavoro e' il tasso di occupazione, senza «lavorano o studiano»;
+    // il voto lo confronta solo coi corsi a ciclo unico della sua area (75
+    // sulle domande di lavoro e 106 su quelle di studio, in
+    // termini-paragone.js); l'avviso dice che il corso conta solo i suoi
+    // laureati; nel menu dei corsi il nome ha la nota «ciclo unico».
+    const MEDICINA_BO = 'corso:70003:0370107304200007';
+    const medicina = await apriLink(`?c=${MEDICINA_BO}&c=ateneo:70003`);
+    await aspettaCorsi(medicina);
+    const med = await medicina.valuta(`(async () => {
+      const riga = (id) => document.querySelector('#griglia-voti .voti-riga[data-indicatore="' + id + '"]');
+      // Solo la cella di Medicina (la prima colonna): nella stessa riga c'e'
+      // anche il voto dell'ateneo, che non deve contare.
+      const cella = (id) => riga(id).querySelectorAll('.voto')[0];
+      const stato = {
+        titolo: riga('occupati').querySelector('.voti-domanda strong').textContent,
+        variante: cella('occupati').querySelector('.voto-variante')?.textContent ?? null,
+        votoLavoro: cella('occupati').querySelector('[data-voto]')?.dataset.voto,
+        votoStipendio: cella('retribuzione').querySelector('[data-voto]')?.dataset.voto,
+        paragone: document.getElementById('paragone-voti').textContent,
+        avvisi: [...document.querySelectorAll('#avvisi-lista li')].map((li) => li.textContent),
+      };
+      document.querySelector('.colonna-scheda .campo-corso .tendina-bottone').click();
+      await new Promise((r) => setTimeout(r, 300));
+      const opzione = [...document.querySelectorAll('[role="option"]')]
+        .find((li) => li.querySelector('.tendina-testo')?.textContent === 'medicina e chirurgia - sede di Bologna (LM-41)');
+      stato.notaMenu = opzione?.querySelector('small')?.textContent ?? null;
+      const triennale = [...document.querySelectorAll('[role="option"]')]
+        .find((li) => li.querySelector('.tendina-testo')?.textContent === 'infermieristica - sede di Bologna (L/SNT1)');
+      stato.notaTriennale = triennale ? (triennale.querySelector('small')?.textContent ?? '') : null;
+      return stato;
+    })()`);
+    verifica('un corso a ciclo unico ha il voto sul lavoro senza «lavorano o studiano», confrontato col ciclo unico',
+      med.titolo !== 'Quanti lavorano o studiano ancora' && med.variante === null &&
+      med.votoLavoro !== undefined && med.votoStipendio !== undefined &&
+      med.paragone.includes('I corsi sono messi a confronto con i corsi a ciclo unico di') &&
+      med.paragone.includes('75 sulle domande di lavoro, 106 su quelle di studio') &&
+      medicina.erroriConsole.length === 0, JSON.stringify({ ...med, errori: medicina.erroriConsole }));
+    verifica('l\'avviso dice che il corso a ciclo unico conta solo i suoi laureati',
+      med.avvisi.some((a) => a.startsWith('Colonne di tipo diverso. I corsi a ciclo unico contano solo i loro laureati')) &&
+      !med.avvisi.some((a) => a.includes('Triennali e ciclo unico')), JSON.stringify(med.avvisi));
+    verifica('nel menu dei corsi Medicina ha la nota «ciclo unico», una triennale no',
+      med.notaMenu === 'ciclo unico' && med.notaTriennale === '', JSON.stringify({ menu: med.notaMenu, triennale: med.notaTriennale }));
+    medicina.chiudi();
+
+    // Una triennale e un ciclo unico insieme: ognuno contro i corsi del suo
+    // tipo, «lavorano o studiano» solo sulla triennale, e l'avviso apposta.
+    const misti = await apriLink(`?c=${MEDICINA_BO}&c=corso:70003:0370106204600003`);
+    await aspettaCorsi(misti);
+    const mix = await misti.valuta(`(() => {
+      const celle = [...document.querySelectorAll('#griglia-voti .voti-riga[data-indicatore="occupati"] .voto')];
+      return {
+        varianti: celle.map((c) => c.querySelector('.voto-variante')?.textContent ?? null),
+        paragone: document.getElementById('paragone-voti').textContent,
+        avvisi: [...document.querySelectorAll('#avvisi-lista li')].map((li) => li.textContent),
+      };
+    })()`);
+    verifica('triennale e ciclo unico insieme: ciascuno coi suoi termini, «lavorano o studiano» solo sulla triennale',
+      mix.varianti.length === 2 && mix.varianti[0] === null && mix.varianti[1] === 'per un corso: lavorano o studiano ancora' &&
+      mix.paragone.includes('I corsi triennali sono messi a confronto con i corsi triennali di') &&
+      mix.paragone.includes('I corsi a ciclo unico sono messi a confronto con i corsi a ciclo unico di') &&
+      mix.avvisi.some((a) => a.startsWith('Triennali e ciclo unico insieme.')) &&
+      !mix.avvisi.some((a) => a.startsWith('Colonne di tipo diverso.')) &&
+      misti.erroriConsole.length === 0, JSON.stringify({ ...mix, errori: misti.erroriConsole }));
+    misti.chiudi();
     await caricaSuTelefono(POCHI);
     await aspettaCorsi(telefono);
     const tel = await leggiPochi(telefono);

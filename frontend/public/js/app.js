@@ -12,7 +12,7 @@ import { processData } from './processData.js';
 import { NOMI_ATENEO } from './nomi-ateneo.js';
 import { NOMI_GRUPPO } from './nomi-gruppo.js';
 import { chiediConfronto } from './ai/connettore.js';
-import { NOMI_CORSO } from './nomi-corso.js';
+import { NOMI_CORSO, CICLO_UNICO } from './nomi-corso.js';
 import { SIGLE_ATENEO, SIGLE_GRUPPO } from './sigle.js';
 import {
   inizializzaSql,
@@ -309,6 +309,21 @@ function etichettaColonna(colonna) {
 }
 
 /**
+ * Returns the degree type of a course column. Single-cycle courses are listed
+ * in CICLO_UNICO; every other course is a first-level degree. The list ships
+ * with the page, so the type is known before the university database loads.
+ *
+ * @param {{codice:string}} colonna - Course column.
+ * @returns {'triennale'|'ciclo-unico'} Degree type.
+ */
+function tipoDiLaurea(colonna) {
+  return CICLO_UNICO.has(colonna.codice) ? 'ciclo-unico' : 'triennale';
+}
+
+/** How a sentence names the courses of a degree type. */
+const NOMI_LAUREA = { triennale: 'triennali', 'ciclo-unico': 'a ciclo unico' };
+
+/**
  * Counts a column the user picked as an anonymous GoatCounter event, so the
  * dashboard shows which universities, areas and courses people look for. The
  * counter (index.html) loads on its own and may be blocked or still loading:
@@ -558,7 +573,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
     opzioni: () => [
       { valore: '', testo: 'Tutto l\'ateneo', nota: 'tutti i corsi e tutti i tipi di laurea' },
       ...Object.entries(NOMI_CORSO[ateneoDellaColonna()] ?? {}).map(([c, nome]) =>
-        ({ valore: c, testo: nome })),
+        (CICLO_UNICO.has(c) ? { valore: c, testo: nome, nota: 'ciclo unico' } : { valore: c, testo: nome })),
     ],
     valore: () => (stato.tipo === 'corso' ? stato.codice : ''),
     testo: () => (stato.tipo === 'corso' ? etichettaColonna(stato) : 'Tutto l\'ateneo'),
@@ -1258,22 +1273,37 @@ const AMBITO_INDAGINE = { profilo: 'sul questionario', occupazione: 'sul lavoro'
 /**
  * Writes the warnings about the comparison as a whole, or hides the box.
  *
- * Two cases: course columns (first-level graduates only) next to university
- * or group columns (all degree types together), and columns whose sample in
- * one survey is below SOGLIA_CAMPIONE_PICCOLO. Names are inserted as text,
- * never as HTML: course names come from an external source.
+ * Three cases: course columns (graduates of one degree type) next to
+ * university or group columns (all degree types together), first-level and
+ * single-cycle courses compared together, and columns whose sample in one
+ * survey is below SOGLIA_CAMPIONE_PICCOLO. Names are inserted as text, never
+ * as HTML: course names come from an external source.
  *
  * @param {object[]} datiPerColonna - Data of each comparison column.
  */
 function aggiornaAvvisi(datiPerColonna) {
   const avvisi = [];
   const corsi = datiPerColonna.filter((d) => d.colonna.tipo === 'corso');
+  const lauree = new Set(corsi.map((d) => tipoDiLaurea(d.colonna)));
   if (corsi.length > 0 && corsi.length < datiPerColonna.length) {
+    const chi = lauree.size > 1
+      ? ' Ogni corso conta solo i laureati del suo tipo di laurea'
+      : lauree.has('ciclo-unico')
+        ? ' I corsi a ciclo unico contano solo i loro laureati'
+        : ' I corsi contano solo laureati di primo livello';
     avvisi.push([
       el('strong', {}, 'Colonne di tipo diverso.'),
-      ' I corsi contano solo laureati di primo livello; atenei e gruppi mettono ' +
-      'insieme triennali, magistrali e ciclo unico. Sul lavoro non sono gruppi ' +
-      'uguali: molti triennalisti stanno ancora studiando.',
+      `${chi}; atenei e gruppi mettono insieme triennali, magistrali e ciclo unico. ` +
+      (lauree.has('triennale')
+        ? 'Sul lavoro non sono gruppi uguali: molti triennalisti stanno ancora studiando.'
+        : 'Non sono gruppi uguali.'),
+    ]);
+  }
+  if (lauree.size > 1) {
+    avvisi.push([
+      el('strong', {}, 'Triennali e ciclo unico insieme.'),
+      ' Sul lavoro non sono gruppi uguali: dopo la triennale molti stanno ancora ' +
+      'studiando, dopo il ciclo unico gli studi sono finiti.',
     ]);
   }
   for (const { colonna, numerosita, inCaricamento } of datiPerColonna) {
@@ -1739,17 +1769,19 @@ function terminiAggregati(tipo, ind) {
 }
 
 /**
- * Returns the values of the first-level courses of some groups.
+ * Returns the values of the courses of one degree type in some groups.
  *
  * @param {string} id - Indicator id, or 'lavora-studia'.
  * @param {string} indagine - Survey of the indicator.
  * @param {string[]} gruppi - Group codes.
+ * @param {'triennale'|'ciclo-unico'} [laurea] - Degree type of the courses.
  * @returns {number[]} Values.
  */
-function terminiCorsi(id, indagine, gruppi) {
+function terminiCorsi(id, indagine, gruppi, laurea = 'triennale') {
+  const fonte = laurea === 'ciclo-unico' ? TERMINI_PARAGONE.valoriCicloUnico : TERMINI_PARAGONE.valori;
   const perGruppo = indagine === 'profilo'
-    ? TERMINI_PARAGONE.valori.profilo[id]
-    : TERMINI_PARAGONE.valori.occupazione[definizioneScelta]?.[id];
+    ? fonte.profilo[id]
+    : fonte.occupazione[definizioneScelta]?.[id];
   return gruppi.flatMap((g) => perGruppo?.[g] ?? []);
 }
 
@@ -1832,20 +1864,23 @@ function testoTuttiUguali(esito, valore, unita) {
  *
  * @param {object} ind - Indicator from indicatori-chiave.js.
  * @param {object} dati - Column data, as renderTabella() reads it.
- * @param {string[]} gruppiCorsi - Groups of the course columns in the comparison.
- * @param {boolean} misto - Whether courses and aggregates are compared together.
+ * @param {object} gruppiPerLaurea - Groups of the course columns in the comparison, by degree type.
+ * @param {boolean} etichettaTriennali - Whether a first-level course's work row
+ *   must say it answers a different question, because not every column is a
+ *   first-level course.
  * @returns {HTMLElement} Cell.
  */
-function creaCellaVoto(ind, dati, gruppiCorsi, misto) {
+function creaCellaVoto(ind, dati, gruppiPerLaurea, etichettaTriennali) {
   const { colonna, indice, mappa, numerosita, inCaricamento } = dati;
   const tipo = colonna.tipo;
+  const laurea = tipo === 'corso' ? tipoDiLaurea(colonna) : null;
   const chi = el('span', { class: 'voto-chi' }, creaSegno(indice),
     el('span', { class: 'nome-colonna' }, etichettaColonna(colonna)));
   const cella = (classe, ...figli) =>
     el('div', { class: `voto ${classe}`, 'data-colonna': colonna.id }, chi, ...figli);
-  // In a comparison that mixes courses and aggregates, a course's work row
-  // says which question it answers, whatever the outcome below.
-  const etichettaLavoro = misto && tipo === 'corso' && ind.id === RIGA_LAVORO
+  // When not every column is a first-level course, a first-level course's
+  // work row says which question it answers, whatever the outcome below.
+  const etichettaLavoro = etichettaTriennali && laurea === 'triennale' && ind.id === RIGA_LAVORO
     ? el('small', { class: 'voto-variante' }, 'per un corso: lavorano o studiano ancora')
     : null;
   const senzaVoto = (motivo, titolo, spiegazione) =>
@@ -1855,7 +1890,9 @@ function creaCellaVoto(ind, dati, gruppiCorsi, misto) {
   if (tipo === 'corso' && colonna.errore) return senzaVoto('errore', 'Non disponibile', colonna.errore);
   if (inCaricamento) return senzaVoto('caricamento', 'Caricamento…', 'scarico i corsi dell\'ateneo');
 
-  const lavoroDelCorso = tipo === 'corso' && ind.id === RIGA_LAVORO;
+  // Only first-level graduates get "works or still studies": single-cycle
+  // graduates have finished studying, so their employment rate is plain.
+  const lavoroDelCorso = laurea === 'triennale' && ind.id === RIGA_LAVORO;
   const idTermini = lavoroDelCorso ? 'lavora-studia' : ind.id;
   let valore;
   let info;
@@ -1867,7 +1904,7 @@ function creaCellaVoto(ind, dati, gruppiCorsi, misto) {
   }
   const campione = campioneDellaRiga(numerosita, ind.indagine);
   const termini = tipo === 'corso'
-    ? terminiCorsi(idTermini, ind.indagine, gruppiCorsi)
+    ? terminiCorsi(idTermini, ind.indagine, gruppiPerLaurea[laurea] ?? [], laurea)
     : terminiAggregati(tipo, ind);
   const esito = calcolaVoto({
     valore, rispondenti: campione?.numero, termini, unita: ind.unita, meglioBasso: ind.meglioBasso,
@@ -1915,18 +1952,21 @@ function creaCellaVoto(ind, dati, gruppiCorsi, misto) {
  * Writes which sheets the scores were ranked against.
  *
  * @param {object[]} datiPerColonna - Data of each comparison column.
- * @param {string[]} gruppiCorsi - Groups of the course columns in the comparison.
+ * @param {object} gruppiPerLaurea - Groups of the course columns in the comparison, by degree type.
  */
-function aggiornaParagoneVoti(datiPerColonna, gruppiCorsi) {
+function aggiornaParagoneVoti(datiPerColonna, gruppiPerLaurea) {
   const parti = [];
   const tipi = new Set(datiPerColonna.map((d) => d.colonna.tipo));
-  const corsi = datiPerColonna.filter((d) => d.colonna.tipo === 'corso').length;
-  if (gruppiCorsi.length > 0) {
-    const nLavoro = terminiCorsi('retribuzione', 'occupazione', gruppiCorsi).length;
-    const nStudio = terminiCorsi('rifarebbero', 'profilo', gruppiCorsi).length;
+  const lauree = Object.keys(gruppiPerLaurea).filter((l) => gruppiPerLaurea[l].length > 0);
+  for (const laurea of lauree) {
+    const gruppi = gruppiPerLaurea[laurea];
+    const corsi = datiPerColonna.filter((d) => d.colonna.tipo === 'corso' && tipoDiLaurea(d.colonna) === laurea).length;
+    const nLavoro = terminiCorsi('retribuzione', 'occupazione', gruppi, laurea).length;
+    const nStudio = terminiCorsi('rifarebbero', 'profilo', gruppi, laurea).length;
     parti.push(
-      `I corsi sono messi a confronto con i corsi triennali di ` +
-      `${gruppiCorsi.map((g) => etichettaCodice('gruppo', g)).join(' e di ')} con almeno ` +
+      `${lauree.length > 1 ? `I corsi ${NOMI_LAUREA[laurea]}` : 'I corsi'} sono messi a confronto ` +
+      `con i corsi ${NOMI_LAUREA[laurea]} di ` +
+      `${gruppi.map((g) => etichettaCodice('gruppo', g)).join(' e di ')} con almeno ` +
       `${SOGLIA_CAMPIONE_PICCOLO} risposte: ${formattaNumero(nLavoro)} sulle domande di lavoro, ` +
       `${formattaNumero(nStudio)} su quelle di studio.` +
       (corsi > 1 ? ' Lo stesso insieme per tutti i corsi, così i loro voti si possono confrontare.' : '')
@@ -1954,13 +1994,18 @@ function renderVoti(datiPerColonna) {
         : 'Aggiungi almeno una colonna per vedere i voti.'));
     return;
   }
-  const gruppiCorsi = [...new Set(datiPerColonna
-    .filter((d) => d.colonna.tipo === 'corso')
-    .map((d) => gruppoColonnaCorso(d.colonna))
-    .filter(Boolean))].sort((a, b) => Number(a) - Number(b));
-  const tipi = new Set(datiPerColonna.map((d) => d.colonna.tipo));
-  const soloCorsi = tipi.size === 1 && tipi.has('corso');
-  const misto = tipi.has('corso') && tipi.size > 1;
+  // A course is ranked only against courses of its own degree type, so the
+  // groups of the course columns are collected by type.
+  const gruppiPerLaurea = { triennale: [], 'ciclo-unico': [] };
+  for (const { colonna } of datiPerColonna) {
+    if (colonna.tipo !== 'corso') continue;
+    const gruppo = gruppoColonnaCorso(colonna);
+    const elenco = gruppiPerLaurea[tipoDiLaurea(colonna)];
+    if (gruppo && !elenco.includes(gruppo)) elenco.push(gruppo);
+  }
+  for (const elenco of Object.values(gruppiPerLaurea)) elenco.sort((a, b) => Number(a) - Number(b));
+  const soloTriennali = datiPerColonna.every(
+    (d) => d.colonna.tipo === 'corso' && tipoDiLaurea(d.colonna) === 'triennale');
 
   elGrigliaVoti.style.setProperty('--n-colonne', String(datiPerColonna.length));
   const testa = el('div', { class: 'voti-riga voti-testa', 'aria-hidden': 'true' },
@@ -1969,14 +2014,14 @@ function renderVoti(datiPerColonna) {
       el('span', { title: etichettaColonna(colonna) }, creaSegno(indice),
         el('span', { class: 'nome-colonna' }, etichettaColonna(colonna)))));
   const righe = INDICATORI_CRUSCOTTO.map((ind) => {
-    const lavoroCorsi = soloCorsi && ind.id === RIGA_LAVORO;
+    const lavoroCorsi = soloTriennali && ind.id === RIGA_LAVORO;
     return el('div', { class: 'voti-riga', 'data-indicatore': ind.id },
       el('div', { class: 'voti-domanda' },
         el('strong', {}, lavoroCorsi ? 'Quanti lavorano o studiano ancora' : ind.titolo),
         el('small', {}, lavoroCorsi
           ? `${LAVORA_STUDIA.categoria} › lavorano o sono iscritti a una laurea di secondo livello`
           : etichettaUfficiale(ind))),
-      ...datiPerColonna.map((dati) => creaCellaVoto(ind, dati, gruppiCorsi, misto)));
+      ...datiPerColonna.map((dati) => creaCellaVoto(ind, dati, gruppiPerLaurea, !soloTriennali)));
   });
   // A question where every column lacks data has nothing to show on a phone.
   for (const riga of righe) {
@@ -1986,7 +2031,7 @@ function renderVoti(datiPerColonna) {
   }
   elGrigliaVoti.replaceChildren(testa, ...righe);
   renderSenzaVoti(datiPerColonna, righe);
-  aggiornaParagoneVoti(datiPerColonna, gruppiCorsi);
+  aggiornaParagoneVoti(datiPerColonna, gruppiPerLaurea);
 }
 
 // Which questions a survey answers, for the line of a column with too few

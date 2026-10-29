@@ -20,7 +20,8 @@ Names are copied exactly as AlmaLaurea writes them. Capitalization is a
 presentation choice and belongs to the stylesheet, not to the data.
 
 USAGE:
-    python3 tools/genera_nomi_corso.py --da ~/Documents/AlmaLaurea-raccolta-corsi
+    python3 tools/genera_nomi_corso.py --da ~/Documents/AlmaLaurea-raccolta-corsi \
+        --da ~/Documents/AlmaLaurea-raccolta-ciclo-unico   # --da once per collection
     python3 tools/genera_nomi_corso.py            # writes the module from the TSV
     python3 tools/genera_nomi_corso.py --check    # does not write; only checks
 """
@@ -50,6 +51,10 @@ INTESTAZIONE = """/**
  * frontend/public/corsi/ (0 mancanti, 0 estranei). Dentro ogni ateneo i
  * corsi sono in ordine alfabetico: un menu li puo' mostrare direttamente,
  * senza scaricare il database dell'ateneo.
+ *
+ * CICLO_UNICO contiene i codici dei corsi di laurea magistrale a ciclo
+ * unico (tipo_corso 'LSE' nei database del sito); un corso che non c'e' e'
+ * una laurea di primo livello.
  *
  * Rigenerato da tools/genera_nomi_corso.py, non modificato a mano.
  */
@@ -163,18 +168,23 @@ def verifica_copertura(mappa):
         mappa: {ateneo: {codice: nome}} mapping.
 
     Returns:
-        A list of coverage problems; empty when coverage is complete.
+        A list of coverage problems, empty when coverage is complete, and the
+        set of single-cycle course codes ('LSE') read from the same databases.
     """
     file_sito = sorted(CORSI_SITO.glob("*.sqlite"))
     if not file_sito:
-        return [f"nessun database in {CORSI_SITO}: copertura non verificata"]
+        return [f"nessun database in {CORSI_SITO}: copertura non verificata"], set()
     nel_sito = set()
+    ciclo_unico = set()
     for percorso in file_sito:
         conn = apri_sola_lettura(percorso)
         try:
-            nel_sito |= set(conn.execute(
-                "SELECT DISTINCT ateneo, corso FROM dati WHERE corso != ''"
-            ).fetchall())
+            for ateneo, corso, tipo in conn.execute(
+                "SELECT DISTINCT ateneo, corso, tipo_corso FROM dati WHERE corso != ''"
+            ):
+                nel_sito.add((ateneo, corso))
+                if tipo == "LSE":
+                    ciclo_unico.add(corso)
         finally:
             conn.close()
     con_nome = {(a, c) for a, corsi in mappa.items() for c in corsi}
@@ -187,15 +197,16 @@ def verifica_copertura(mappa):
         problemi.append(f"{len(estranei)} nomi senza corso nei database: {estranei[:10]}")
     if not problemi:
         print(f"Copertura {len(nel_sito)}/{len(nel_sito)} su {len(file_sito)} database "
-              f"(0 mancanti, 0 estranei)")
-    return problemi
+              f"(0 mancanti, 0 estranei), {len(ciclo_unico)} a ciclo unico")
+    return problemi, ciclo_unico
 
 
-def rendi(mappa):
+def rendi(mappa, ciclo_unico):
     """Render nomi-corso.js.
 
     Args:
         mappa: {ateneo: {codice: nome}} mapping.
+        ciclo_unico: Codes of the single-cycle courses.
 
     Returns:
         The generated JavaScript module text.
@@ -204,7 +215,9 @@ def rendi(mappa):
     intestazione = INTESTAZIONE.replace("{corsi}", f"{corsi:,}".replace(",", "."))
     intestazione = intestazione.replace("{atenei}", str(len(mappa)))
     corpo = json.dumps(mappa, indent=2, ensure_ascii=False)
-    return f"{intestazione}\nexport const NOMI_CORSO = {corpo};\n"
+    codici = json.dumps(sorted(ciclo_unico), indent=2)
+    return (f"{intestazione}\nexport const NOMI_CORSO = {corpo};\n"
+            f"\nexport const CICLO_UNICO = new Set({codici});\n")
 
 
 def scrivi(testo, solo_controllo):
@@ -234,7 +247,9 @@ def main():
     """Parse arguments, refresh the source if asked, and generate the module."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--da", help="cartella dei database della raccolta: rinfresca il TSV")
+    parser.add_argument("--da", action="append",
+                        help="cartella dei database di una raccolta: rinfresca il TSV; "
+                             "si ripete una volta per raccolta")
     parser.add_argument("--check", action="store_true",
                         help="non scrive nulla: esce con codice 1 se qualcosa non torna")
     argomenti = parser.parse_args()
@@ -242,17 +257,21 @@ def main():
     if argomenti.da:
         if argomenti.check:
             sys.exit("--da e --check insieme non hanno senso: --check non scrive niente")
-        cartella = Path(argomenti.da).expanduser()
-        if not cartella.is_dir():
-            sys.exit(f"Cartella della raccolta non trovata: {cartella}")
-        scrivi_tsv(leggi_raccolta(cartella))
+        righe = []
+        for voce in argomenti.da:
+            cartella = Path(voce).expanduser()
+            if not cartella.is_dir():
+                sys.exit(f"Cartella della raccolta non trovata: {cartella}")
+            righe += leggi_raccolta(cartella)
+        scrivi_tsv(righe)
 
     if not SORGENTE.exists():
         sys.exit(f"Sorgente non trovata: {SORGENTE} (generala con --da)")
 
     mappa, problemi = costruisci_mappa(leggi_tsv())
     print(f"Sorgente letta: {sum(len(v) for v in mappa.values())} corsi su {len(mappa)} atenei.")
-    problemi += verifica_copertura(mappa)
+    problemi_copertura, ciclo_unico = verifica_copertura(mappa)
+    problemi += problemi_copertura
     for p in problemi:
         print(f"ATTENZIONE: {p}")
     if problemi:
@@ -261,7 +280,7 @@ def main():
         print(f"Niente scritto: {USCITA.relative_to(RADICE)} resta com'era.")
         return 1
 
-    return 0 if scrivi(rendi(mappa), argomenti.check) else 1
+    return 0 if scrivi(rendi(mappa, ciclo_unico), argomenti.check) else 1
 
 
 if __name__ == "__main__":
