@@ -35,8 +35,18 @@ USO
     python3 tools/raccogli_corsi.py --atenei 70003,70055 --out /tmp/corsi
     python3 tools/raccogli_corsi.py --primi 5 --max-minuti 90
     python3 tools/raccogli_corsi.py --atenei 70003 --solo-scoperta
+    python3 tools/raccogli_corsi.py --primi 78 --corstipo LSE --out ~/Documents/AlmaLaurea-raccolta-ciclo-unico
 
 Si lancia da qualunque cartella: i percorsi partono dalla radice del repository.
+
+TIPI DI CORSO
+-------------
+`--corstipo` sceglie quali corsi: `L` triennali (il default, quelli del sito),
+`LSE` magistrali a ciclo unico, `LS` magistrali biennali. Ogni tipo vuole la
+SUA cartella (`--out` obbligatorio fuori da `L`): il registro `_scoperta` non
+sa di che tipo era una scoperta, quindi nei database delle triennali tutti i
+gruppi risulterebbero gia' interrogati e il ciclo unico verrebbe saltato in
+silenzio.
 """
 
 import argparse
@@ -62,6 +72,7 @@ from scarica import leggi_tendine, raccogli_scheda, scarica_scheda  # noqa: E402
 
 PAUSA_PREDEFINITA = 2.0
 CARTELLA_PREDEFINITA = RADICE / "backend" / "backup-db" / "corsi"
+TIPI_CORSO = ("L", "LSE", "LS")  # i valori della tendina `corstipo` di AlmaLaurea
 
 # Il registro di cosa e' gia' fatto vive DENTRO il database dell'ateneo, non in
 # un file di stato a fianco: cosi' il database e' autosufficiente e non puo'
@@ -174,7 +185,7 @@ def apri(cartella, ateneo):
     return conn
 
 
-def chiedi_tendine(ateneo, gruppo):
+def chiedi_tendine(ateneo, gruppo, corstipo="L"):
     """Un solo gruppo, con le ripetizioni.
 
     Ritorna `(corsi, dubbio)`:
@@ -191,14 +202,45 @@ def chiedi_tendine(ateneo, gruppo):
         if tentativo:
             time.sleep(ATTESE_SCOPERTA[min(tentativo - 1, len(ATTESE_SCOPERTA) - 1)])
         try:
-            tendine = leggi_tendine(params_tendine(ateneo, gruppo))
+            tendine = leggi_tendine(params_tendine(ateneo, gruppo, corstipo=corstipo))
             return tendine.get("postcorso", []), None
         except requests.HTTPError as e:
             ultimo = str(e.response.status_code) if e.response is not None else "?"
     return [], ultimo
 
 
-def scopri(conn, ateneo, gruppi, pausa, budget):
+def gruppi_con_corsi(ateneo, corstipo):
+    """Quali gruppi hanno corsi di questo tipo nell'ateneo, con UNA richiesta.
+
+    Con `gruppo=tutti` solotendine.php non elenca i corsi, ma la sua tendina
+    dei gruppi contiene solo quelli che ne hanno. Verificato il 28 ott 2026 sulle
+    triennali di 6 atenei (Sapienza, Bologna, Roma Tre, PoliTo, 70141, IULM): la
+    lista coincide gruppo per gruppo con quelli dove la raccolta ha trovato
+    corsi. Serve soprattutto fuori dalle triennali: il ciclo unico sta in 6
+    gruppi su 15, e ogni gruppo vuoto interrogato costa ~15 s di ripetizioni.
+
+    Ritorna `(gruppi, dubbio)` come `chiedi_tendine()`:
+      - `(insieme, None)`  risposta buona (vuota = l'ateneo non ne ha nessuno);
+      - `(set(), "503")`   l'errore si e' ripetuto a ogni tentativo. Un ateneo
+                           SENZA corsi di quel tipo risponde cosi', in modo
+                           stabile (28 ott 2026: 10 atenei senza ciclo unico,
+                           503 a ogni giro mentre il resto rispondeva).
+    Un guasto di rete viene rilanciato: il chiamante allora interroga tutti i
+    gruppi, come prima che esistesse questa funzione."""
+    params = dict(params_tendine(ateneo, GRUPPI[0], corstipo=corstipo), gruppo="tutti")
+    ultimo = "?"
+    for tentativo in range(TENTATIVI_SCOPERTA):
+        if tentativo:
+            time.sleep(ATTESE_SCOPERTA[min(tentativo - 1, len(ATTESE_SCOPERTA) - 1)])
+        try:
+            tendine = leggi_tendine(params)
+            return {g for g, _ in tendine.get("gruppo", []) if g in GRUPPI}, None
+        except requests.HTTPError as e:
+            ultimo = str(e.response.status_code) if e.response is not None else "?"
+    return set(), ultimo
+
+
+def scopri(conn, ateneo, gruppi, pausa, budget, corstipo="L"):
     """Chiede a solotendine.php quali corsi esistono, gruppo per gruppo.
 
     Un gruppo gia' interrogato non si ripete: sta in `_scoperta`. Un ateneo che
@@ -222,12 +264,44 @@ def scopri(conn, ateneo, gruppi, pausa, budget):
     if not da_fare:
         return 0, 0, False
 
+    # Prima la lista dei gruppi che hanno corsi di questo tipo: gli altri si
+    # chiudono subito, senza interrogarli uno per uno. Se la lista non arriva
+    # per un guasto di rete si interrogano tutti, come si e' sempre fatto.
+    try:
+        presenti, dubbio_ateneo = gruppi_con_corsi(ateneo, corstipo)
+    except Exception as e:
+        presenti = None
+        print(f"    lista dei gruppi non disponibile ({type(e).__name__}): "
+              f"interrogo tutti i {len(da_fare)} gruppi")
+    time.sleep(pausa)
+    if presenti is not None:
+        quando = datetime.now().isoformat(timespec="seconds")
+        assenti = [g for g in da_fare if g not in presenti]
+        for gruppo in assenti:
+            conn.execute(
+                "INSERT OR REPLACE INTO _scoperta (ateneo, gruppo, quando) VALUES (?,?,?)",
+                (ateneo, gruppo, quando))
+            if dubbio_ateneo:
+                # Stessa regola dei gruppi: chiuso, ma ripassabile con
+                # --verifica-dubbie, che li riinterroga uno per uno.
+                conn.execute(
+                    "INSERT OR REPLACE INTO _scoperta_dubbia (ateneo, gruppo, codice, quando) "
+                    "VALUES (?,?,?,?)", (ateneo, gruppo, dubbio_ateneo, quando))
+        conn.commit()
+        if dubbio_ateneo:
+            print(f"    nessun corso {corstipo} (HTTP {dubbio_ateneo} per "
+                  f"{TENTATIVI_SCOPERTA} volte) -> {len(assenti)} gruppi chiusi come "
+                  f"vuoti, segnati fra i dubbi")
+        elif assenti:
+            print(f"    {len(assenti)} gruppi senza corsi {corstipo}, chiusi senza interrogarli")
+        da_fare = [g for g in da_fare if g in presenti]
+
     nuovi = falliti = 0
     for gruppo in da_fare:
         if budget.scaduto():
             return nuovi, falliti, True
         try:
-            corsi, dubbio = chiedi_tendine(ateneo, gruppo)
+            corsi, dubbio = chiedi_tendine(ateneo, gruppo, corstipo)
         except Exception as e:
             falliti += 1
             print(f"    gr.{gruppo}: FALLITA la scoperta, si ritenta alla "
@@ -255,7 +329,7 @@ def scopri(conn, ateneo, gruppi, pausa, budget):
     return nuovi, falliti, False
 
 
-def scarica_corsi(conn, ateneo, indagini, pausa, budget, max_corsi=None):
+def scarica_corsi(conn, ateneo, indagini, pausa, budget, max_corsi=None, corstipo="L"):
     """Scarica le schede dei corsi gia' scoperti. Salta quelle in `_fatte` e
     quelle in `_inesistenti`."""
     corsi = list(conn.execute(
@@ -278,7 +352,8 @@ def scarica_corsi(conn, ateneo, indagini, pausa, budget, max_corsi=None):
         if budget.scaduto():
             print(f"    tetto raggiunto: mi fermo pulito a {n - 1}/{len(lavoro)}")
             return ok, vuote, falliti, inesistenti, True
-        combo = genera_corsi({ateneo: [(gruppo, codice, nome)]}, config=indagine)[0]
+        combo = genera_corsi({ateneo: [(gruppo, codice, nome)]}, config=indagine,
+                             corstipo=corstipo)[0]
         try:
             righe = raccogli_scheda(scarica_scheda(combo["params"]), combo["params"])
             n_righe = salva_righe(conn, righe)
@@ -340,7 +415,7 @@ def riepilogo(cartella, ateneo):
     return corsi, fatte, inesistenti, righe, f.stat().st_size
 
 
-def verifica_dubbie(cartella, atenei, pausa):
+def verifica_dubbie(cartella, atenei, pausa, corstipo="L"):
     """Ripassa i gruppi chiusi da dubbio e recupera quelli che ora rispondono.
 
     E' la sonda che il 19 set 2026 e' stata fatta a mano su 98 casi (esito:
@@ -363,7 +438,7 @@ def verifica_dubbie(cartella, atenei, pausa):
             print(f"  ateneo {ateneo}: {len(dubbie)} gruppi da ripassare")
             for gruppo, codice, quando in dubbie:
                 try:
-                    corsi, dubbio = chiedi_tendine(ateneo, gruppo)
+                    corsi, dubbio = chiedi_tendine(ateneo, gruppo, corstipo)
                 except Exception as e:
                     falliti += 1
                     print(f"    gr.{gruppo}: non raggiungibile ora "
@@ -402,8 +477,11 @@ def main():
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--atenei", help="codici separati da virgola, es. 70003,70055")
     g.add_argument("--primi", type=int, help="i primi N atenei della lista ufficiale")
-    p.add_argument("--out", default=str(CARTELLA_PREDEFINITA),
-                   help=f"cartella dei database (default: {CARTELLA_PREDEFINITA})")
+    p.add_argument("--out",
+                   help=f"cartella dei database (default per le triennali: "
+                        f"{CARTELLA_PREDEFINITA}; obbligatoria per gli altri tipi)")
+    p.add_argument("--corstipo", choices=TIPI_CORSO, default="L",
+                   help="L triennali (default), LSE ciclo unico, LS magistrali biennali")
     p.add_argument("--pausa", type=float, default=PAUSA_PREDEFINITA,
                    help=f"secondi fra richieste (default: {PAUSA_PREDEFINITA})")
     p.add_argument("--gruppi", help="gruppi da interrogare (default: tutti e 15)")
@@ -457,17 +535,24 @@ def main():
     # Relativo = dalla radice del repository, come --db in esegui_harvest.py.
     # Dalla cartella corrente, una ripartenza lanciata da un altro posto non
     # trovava i database gia' fatti e riscaricava tutto.
-    cartella = Path(a.out)
+    if a.out is None:
+        if a.corstipo != "L":
+            print(f"--corstipo {a.corstipo} vuole una sua cartella con --out: nei "
+                  f"database delle triennali i gruppi risultano gia' interrogati e "
+                  f"i corsi {a.corstipo} verrebbero saltati.", file=sys.stderr)
+            return 2
+        a.out = str(CARTELLA_PREDEFINITA)
+    cartella = Path(a.out).expanduser()
     if not cartella.is_absolute():
         cartella = RADICE / cartella
     if a.verifica_dubbie:
         print(f"Verifica dei gruppi chiusi da dubbio — {len(atenei)} atenei, "
-              f"pausa {a.pausa}s")
+              f"corsi {a.corstipo}, pausa {a.pausa}s")
         print(f"Cartella: {cartella}\n")
-        return verifica_dubbie(cartella, atenei, a.pausa)
+        return verifica_dubbie(cartella, atenei, a.pausa, a.corstipo)
 
     budget = Budget(a.max_minuti)
-    print(f"Raccolta corsi — {len(atenei)} atenei, pausa {a.pausa}s, "
+    print(f"Raccolta corsi {a.corstipo} — {len(atenei)} atenei, pausa {a.pausa}s, "
           f"tetto {budget.restano()}")
     print(f"Cartella: {cartella}\n")
 
@@ -481,7 +566,8 @@ def main():
         print(f"  ateneo {ateneo}  ({budget.restano()} residui)")
         conn = apri(cartella, ateneo)
         try:
-            nuovi, falliti_scoperta, stop = scopri(conn, ateneo, gruppi, a.pausa, budget)
+            nuovi, falliti_scoperta, stop = scopri(conn, ateneo, gruppi, a.pausa, budget,
+                                                   a.corstipo)
             tot_scoperta_fallita += falliti_scoperta
             print(f"    scoperta: {nuovi} corsi nuovi"
                   f"{f', {falliti_scoperta} gruppi da ritentare' if falliti_scoperta else ''}")
@@ -490,7 +576,7 @@ def main():
                 break
             if not a.solo_scoperta:
                 ok, vuote, falliti, inesistenti, stop = scarica_corsi(
-                    conn, ateneo, indagini, a.pausa, budget, a.max_corsi)
+                    conn, ateneo, indagini, a.pausa, budget, a.max_corsi, a.corstipo)
                 tot_ok += ok
                 tot_vuote += vuote
                 tot_falliti += falliti
