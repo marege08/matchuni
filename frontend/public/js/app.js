@@ -32,7 +32,7 @@ import {
   formattaConUnita,
   etichetteScala,
 } from './indicatori-chiave.js';
-import { calcolaVoto, fraseVoto, SOGLIA_RISPONDENTI } from './voto.js';
+import { calcolaVoto, fraseVoto, SOGLIA_RISPONDENTI, SOGLIA_MAGISTRALI } from './voto.js';
 import { TERMINI_PARAGONE } from './termini-paragone.js';
 import { creaTendina, potenziaSelect } from './tendina.js';
 import { creaXlsx } from './esporta-xlsx.js';
@@ -352,6 +352,19 @@ function fonteCorso(colonna) {
 
 /** How a sentence names the courses of a degree type. */
 const NOMI_LAUREA = { triennale: 'triennali', 'ciclo-unico': 'a ciclo unico', magistrale: 'magistrali' };
+
+/**
+ * Returns the respondents a column needs for a score: fewer for a master's
+ * course (SOGLIA_MAGISTRALI in js/voto.js), which renderSenzaVoti() then
+ * flags as a small sample when it stays below SOGLIA_CAMPIONE_PICCOLO.
+ *
+ * @param {{tipo:string,codice:string}} colonna - Comparison column.
+ * @returns {number} Threshold.
+ */
+function sogliaVoto(colonna) {
+  return colonna.tipo === 'corso' && tipoDiLaurea(colonna) === 'magistrale'
+    ? SOGLIA_MAGISTRALI : SOGLIA_CAMPIONE_PICCOLO;
+}
 
 /** The note a course menu shows next to a course name, by degree type. */
 const NOTA_LAUREA = { 'ciclo-unico': 'ciclo unico', magistrale: 'magistrale' };
@@ -1968,6 +1981,7 @@ function creaCellaVoto(ind, dati, gruppiPerLaurea, etichettaTriennali) {
     : terminiAggregati(tipo, ind);
   const esito = calcolaVoto({
     valore, rispondenti: campione?.numero, termini, unita: ind.unita, meglioBasso: ind.meglioBasso,
+    soglia: sogliaVoto(colonna),
   });
 
   if (esito.voto !== undefined) {
@@ -1995,7 +2009,8 @@ function creaCellaVoto(ind, dati, gruppiPerLaurea, etichettaTriennali) {
       const spiegazione = `solo ${formattaNumero(esito.rispondenti)} ${campione?.nome ?? 'rispondenti'}: non basta per un voto`;
       return cella('senza-voto voto-pochi', el('span', {
         class: 'voto-trattino', 'data-motivo': 'pochi-dati', 'data-indagine': ind.indagine,
-        'data-rispondenti': String(esito.rispondenti), title: spiegazione, 'aria-label': spiegazione,
+        'data-rispondenti': String(esito.rispondenti), 'data-soglia': String(sogliaVoto(colonna)),
+        title: spiegazione, 'aria-label': spiegazione,
       }, '—'));
     }
     case 'pochi-termini':
@@ -2023,11 +2038,12 @@ function aggiornaParagoneVoti(datiPerColonna, gruppiPerLaurea) {
     const corsi = datiPerColonna.filter((d) => d.colonna.tipo === 'corso' && tipoDiLaurea(d.colonna) === laurea).length;
     const nLavoro = terminiCorsi('retribuzione', 'occupazione', gruppi, laurea).length;
     const nStudio = terminiCorsi('rifarebbero', 'profilo', gruppi, laurea).length;
+    const soglia = laurea === 'magistrale' ? SOGLIA_MAGISTRALI : SOGLIA_CAMPIONE_PICCOLO;
     parti.push(
       `${lauree.length > 1 ? `I corsi ${NOMI_LAUREA[laurea]}` : 'I corsi'} sono messi a confronto ` +
       `con i corsi ${NOMI_LAUREA[laurea]} di ` +
       `${gruppi.map((g) => etichettaCodice('gruppo', g)).join(' e di ')} con almeno ` +
-      `${SOGLIA_CAMPIONE_PICCOLO} risposte: ${formattaNumero(nLavoro)} sulle domande di lavoro, ` +
+      `${soglia} risposte: ${formattaNumero(nLavoro)} sulle domande di lavoro, ` +
       `${formattaNumero(nStudio)} su quelle di studio.` +
       (corsi > 1 ? ' Lo stesso insieme per tutti i corsi, così i loro voti si possono confrontare.' : '')
     );
@@ -2108,27 +2124,60 @@ const DOMANDE_INDAGINE = {
  * Respondents are counted per survey, so a column lacks either every score of
  * a survey or none: the line names the surveys, with their respondents.
  *
+ * A master's course gets scores from SOGLIA_MAGISTRALI respondents, fewer than
+ * SOGLIA_CAMPIONE_PICCOLO: for a survey in between, its line says that the
+ * scores rest on few respondents.
+ *
  * @param {object[]} datiPerColonna - Data of each comparison column.
  * @param {HTMLElement[]} righe - Rows of the grid, one per key question.
  */
 function renderSenzaVoti(datiPerColonna, righe) {
   const indagini = [...new Set(INDICATORI_CRUSCOTTO.map((ind) => ind.indagine))];
   const righeTesto = [];
-  for (const { colonna, indice } of datiPerColonna) {
+  for (const { colonna, indice, numerosita, inCaricamento } of datiPerColonna) {
     const pochi = new Map();
     for (const riga of righe) {
       const segno = riga.querySelector(`.voto[data-colonna="${colonna.id}"] .voto-trattino`);
       if (segno) pochi.set(segno.dataset.indagine, Number(segno.dataset.rispondenti));
     }
-    if (pochi.size === 0) continue;
-    const quali = indagini.filter((i) => pochi.has(i));
-    const testo = quali.length === indagini.length
-      ? `niente voti, troppo poche risposte (${quali.map((i) =>
-        `${formattaNumero(pochi.get(i))} ${DOMANDE_INDAGINE[i].breve}`).join(', ')}; ne servono ${SOGLIA_CAMPIONE_PICCOLO}).`
-      : `niente voti sulle domande di ${quali.map((i) => DOMANDE_INDAGINE[i].tema).join(' e ')}: troppo poche risposte ` +
-        `(${quali.map((i) => formattaNumero(pochi.get(i))).join(', ')}; ne servono ${SOGLIA_CAMPIONE_PICCOLO}).`;
+    const soglia = sogliaVoto(colonna);
+    // Surveys scored on fewer respondents than usual (master's courses only).
+    const cautela = new Map();
+    if (soglia < SOGLIA_CAMPIONE_PICCOLO && !inCaricamento && !colonna.errore) {
+      for (const i of indagini) {
+        const campione = campioneDellaRiga(numerosita, i);
+        if (!pochi.has(i) && campione && campione.numero >= soglia && campione.numero < SOGLIA_CAMPIONE_PICCOLO) {
+          cautela.set(i, campione.numero);
+        }
+      }
+    }
+    if (pochi.size === 0 && cautela.size === 0) continue;
+    const frasi = [];
+    if (pochi.size > 0) {
+      const quali = indagini.filter((i) => pochi.has(i));
+      frasi.push(quali.length === indagini.length
+        ? `niente voti, troppo poche risposte (${quali.map((i) =>
+          `${formattaNumero(pochi.get(i))} ${DOMANDE_INDAGINE[i].breve}`).join(', ')}; ne servono ${soglia}).`
+        : `niente voti sulle domande di ${quali.map((i) => DOMANDE_INDAGINE[i].tema).join(' e ')}: troppo poche risposte ` +
+          `(${quali.map((i) => formattaNumero(pochi.get(i))).join(', ')}; ne servono ${soglia}).`);
+    }
+    if (cautela.size > 0) {
+      const quali = indagini.filter((i) => cautela.has(i));
+      const dove = quali.length === indagini.length && pochi.size === 0
+        ? `voti con poche risposte (${quali.map((i) =>
+          `${formattaNumero(cautela.get(i))} ${DOMANDE_INDAGINE[i].breve}`).join(', ')})`
+        : `voti con poche risposte sulle domande di ${quali.map((i) => DOMANDE_INDAGINE[i].tema).join(' e ')} ` +
+          `(${quali.map((i) => formattaNumero(cautela.get(i))).join(', ')})`;
+      const frase = `${dove}: sotto le ${SOGLIA_CAMPIONE_PICCOLO} i numeri oscillano molto da un anno ` +
+        'all\'altro, prendili con cautela.';
+      frasi.push(frasi.length ? frase.charAt(0).toUpperCase() + frase.slice(1) : frase);
+    }
+    const testo = frasi.join(' ');
     const nome = etichettaColonna(colonna);
-    righeTesto.push(el('p', { class: 'voti-senza-riga', 'data-colonna': colonna.id },
+    righeTesto.push(el('p', {
+      class: 'voti-senza-riga', 'data-colonna': colonna.id,
+      'data-motivo': pochi.size > 0 ? 'pochi-dati' : 'cautela',
+    },
       creaSegno(indice),
       el('span', {}, el('strong', {}, `${nome.charAt(0).toUpperCase()}${nome.slice(1)}:`), ` ${testo}`)));
   }

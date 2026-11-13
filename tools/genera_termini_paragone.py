@@ -47,6 +47,10 @@ USCITA = RADICE / "frontend" / "public" / "js" / "termini-paragone.js"
 # Same threshold as SOGLIA_CAMPIONE_PICCOLO in app.js: below it a value is
 # too unstable to rank anything against.
 SOGLIA_RISPONDENTI = 40
+# Master's degrees have their own, lower threshold (SOGLIA_MAGISTRALI in
+# voto.js, Mare, 13 nov 2026): they have fewer graduates, and at 40 five
+# discipline groups would have too few comparable courses for any score.
+SOGLIA_MAGISTRALI = 15
 
 # Definitions of "employed" published for the employment survey.
 DEFINIZIONI = ("ampia", "restrittiva")
@@ -63,7 +67,7 @@ INTESTAZIONE = """/**
  *
  * Values a course is ranked against to compute its 0-10 score (js/voto.js):
  * for each key indicator, the value of every course with at least {soglia}
- * respondents, by discipline group, sorted. Employment indicators have one
+ * respondents ({soglia_ls} for second-level courses), by discipline group, sorted. Employment indicators have one
  * list per definition of "employed". A course is ranked only against courses
  * of its own type: "valori" holds the first-level courses, "valoriCicloUnico"
  * the single-cycle ones, "valoriMagistrali" the second-level ones.
@@ -127,7 +131,7 @@ def aggiungi(valori, chiave, gruppo, valore):
     valori.setdefault(chiave, {}).setdefault(gruppo, []).append(valore)
 
 
-def leggi_corsi(indicatori, tipo_corso="L"):
+def leggi_corsi(indicatori, tipo_corso="L", soglia=SOGLIA_RISPONDENTI):
     """Collect the ranked values from every course database.
 
     Args:
@@ -136,6 +140,7 @@ def leggi_corsi(indicatori, tipo_corso="L"):
             level). Only first-level courses get "lavora-studia": single-cycle
             and second-level graduates have finished their studies, so their
             plain employment rate is not misleading.
+        soglia: Respondents a course needs to be a comparable value.
 
     Returns:
         (valori, corsi, atenei): valori is {"profilo": {id: {gruppo: [..]}},
@@ -162,7 +167,7 @@ def leggi_corsi(indicatori, tipo_corso="L"):
                 ).fetchall()
                 for ateneo, corso, gruppo, definizione, valore, rispondenti in righe:
                     corsi.add((ateneo, corso))
-                    if valore is None or (rispondenti or 0) < SOGLIA_RISPONDENTI:
+                    if valore is None or (rispondenti or 0) < soglia:
                         continue
                     if ind["indagine"] == "profilo":
                         aggiungi(valori["profilo"], ind["id"], gruppo, valore)
@@ -244,13 +249,14 @@ def rendi(indicatori, valori, corsi, atenei, valori_lse, corsi_lse, valori_ls, c
     """
     contenuto = {
         "soglia": SOGLIA_RISPONDENTI,
+        "sogliaMagistrali": SOGLIA_MAGISTRALI,
         "indicatori": [{k: i[k] for k in ("id", "indagine", "categoria", "indicatore")} for i in indicatori],
         "lavoraStudia": {"categoria": CATEGORIA_LAVORA_STUDIA, "voci": list(VOCI_LAVORA_STUDIA)},
         "valori": ordina(valori),
         "valoriCicloUnico": ordina(valori_lse),
         "valoriMagistrali": ordina(valori_ls),
     }
-    testo = INTESTAZIONE.format(soglia=SOGLIA_RISPONDENTI, corsi=f"{corsi:,}".replace(",", "."),
+    testo = INTESTAZIONE.format(soglia=SOGLIA_RISPONDENTI, soglia_ls=SOGLIA_MAGISTRALI, corsi=f"{corsi:,}".replace(",", "."),
                                 corsi_lse=f"{corsi_lse:,}".replace(",", "."),
                                 corsi_ls=f"{corsi_ls:,}".replace(",", "."),
                                 atenei=atenei, categoria=CATEGORIA_LAVORA_STUDIA)
@@ -270,7 +276,7 @@ def main():
     indicatori = leggi_indicatori()
     valori, corsi, atenei = leggi_corsi(indicatori, "L")
     valori_lse, corsi_lse, _ = leggi_corsi(indicatori, "LSE")
-    valori_ls, corsi_ls, _ = leggi_corsi(indicatori, "LS")
+    valori_ls, corsi_ls, _ = leggi_corsi(indicatori, "LS", SOGLIA_MAGISTRALI)
     for etichetta, v in (("triennali", valori), ("ciclo unico", valori_lse),
                          ("magistrali", valori_ls)):
         for indagine, chiavi in (("profilo", v["profilo"]),

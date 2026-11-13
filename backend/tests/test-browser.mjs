@@ -1564,7 +1564,8 @@ async function main() {
     // voto non distingue, e la prova accetta l'uno o l'altro); lo stipendio ha
     // il voto; «rifarebbero» ha il
     // voto (la domanda ha l'etichetta delle triennali); il confronto e' coi
-    // corsi magistrali dell'area (78 sul lavoro, 112 sullo studio, in
+    // corsi magistrali dell'area con almeno 15 risposte (189 sul lavoro, 234
+    // sullo studio, in
     // termini-paragone.js); l'avviso e la nota «magistrale» nel menu.
     const MECCANICA_LM = 'corso:70026:0580107303400001';
     const magistrale = await apriLink(`?c=${MECCANICA_LM}&c=ateneo:70026`);
@@ -1602,7 +1603,7 @@ async function main() {
       lm.variante === null && (lm.votoLavoro !== undefined || lm.motivoLavoro === 'tutti-uguali') &&
         lm.votoStipendio !== undefined && lm.votoRifarebbero !== undefined &&
         lm.paragone.includes('I corsi sono messi a confronto con i corsi magistrali di') &&
-        lm.paragone.includes('78 sulle domande di lavoro, 112 su quelle di studio') &&
+        lm.paragone.includes('con almeno 15 risposte: 189 sulle domande di lavoro, 234 su quelle di studio') &&
         magistrale.erroriConsole.length === 0, JSON.stringify({ ...lm, errori: magistrale.erroriConsole }));
     verifica('l\'avviso dice che il corso magistrale conta solo i suoi laureati',
       lm.avvisi.some((a) => a.startsWith('Colonne di tipo diverso. I corsi magistrali contano solo i loro laureati')),
@@ -1611,6 +1612,41 @@ async function main() {
       lm.notaMagistrale === 'magistrale' && lm.notaTriennale === '',
       JSON.stringify({ magistrale: lm.notaMagistrale, triennale: lm.notaTriennale }));
     magistrale.chiudi();
+
+    // Soglia delle magistrali a 15 (Mare, 13 nov 2026). Finance and banking a
+    // Tor Vergata (LM-16): 21 intervistati sul lavoro e 25 compilatori sullo
+    // studio, sotto i 40 ma sopra i 15: i voti ci sono, e sopra i voti una riga
+    // dice che le risposte sono poche. Una magistrale della Sapienza con 14 sul
+    // lavoro e 33 sullo studio: niente voti di lavoro («ne servono 15»), voti
+    // di studio con l'avviso. Una triennale sotto i 40 resta senza voti.
+    const leggiSoglia = (pagina) => pagina.valuta(`(() => {
+      const cella = (id) => document.querySelector('#griglia-voti .voti-riga[data-indicatore="' + id + '"] .voto');
+      return {
+        righe: [...document.querySelectorAll('#voti-senza .voti-senza-riga')].map((p) => ({ motivo: p.dataset.motivo, testo: p.textContent.trim() })),
+        stipendio: cella('retribuzione').querySelector('[data-voto]')?.dataset.voto ?? null,
+        rifarebbero: cella('rifarebbero').querySelector('[data-voto]')?.dataset.voto ?? null,
+        trattinoLavoro: !!cella('retribuzione').querySelector('.voto-trattino'),
+      };
+    })()`);
+    const finance = await apriLink('?c=corso:70027:0580207301700001');
+    await aspettaCorsi(finance);
+    const fin = await leggiSoglia(finance);
+    verifica('magistrale con 21 e 25 risposte: voti presenti e la riga «voti con poche risposte»',
+      fin.stipendio !== null && fin.rifarebbero !== null && fin.righe.length === 1 && fin.righe[0].motivo === 'cautela' &&
+        fin.righe[0].testo === 'Finance and banking - finanza e banca (LM-16): voti con poche risposte (21 sul lavoro, ' +
+          "25 sullo studio): sotto le 40 i numeri oscillano molto da un anno all'altro, prendili con cautela." &&
+        finance.erroriConsole.length === 0, JSON.stringify({ ...fin, errori: finance.erroriConsole }));
+    finance.chiudi();
+    const meta = await apriLink('?c=corso:70026:0580107300600001');
+    await aspettaCorsi(meta);
+    const mez = await leggiSoglia(meta);
+    verifica('magistrale con 14 sul lavoro e 33 sullo studio: niente voti di lavoro (ne servono 15), voti di studio con l\'avviso',
+      mez.stipendio === null && mez.trattinoLavoro && mez.rifarebbero !== null && mez.righe.length === 1 &&
+        mez.righe[0].motivo === 'pochi-dati' &&
+        mez.righe[0].testo.endsWith('niente voti sulle domande di lavoro: troppo poche risposte (14; ne servono 15). ' +
+          "Voti con poche risposte sulle domande di studio (33): sotto le 40 i numeri oscillano molto da un anno all'altro, prendili con cautela.") &&
+        meta.erroriConsole.length === 0, JSON.stringify({ ...mez, errori: meta.erroriConsole }));
+    meta.chiudi();
 
     // Triennale e magistrale della stessa area insieme: ognuna coi termini
     // del suo tipo, «lavorano o studiano» solo sulla triennale, l'avviso.

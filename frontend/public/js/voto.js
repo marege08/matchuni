@@ -19,6 +19,12 @@
 /** Respondents below which a value is too unstable to score, as in app.js. */
 export const SOGLIA_RISPONDENTI = 40;
 
+// Master's degrees (Mare, 13 nov 2026): they have fewer graduates and some are
+// very niche, so a master's course gets a score from this many respondents;
+// between this and SOGLIA_RISPONDENTI the page warns above the scores that
+// the sample is small.
+export const SOGLIA_MAGISTRALI = 15;
+
 /** Comparable sheets needed for a rank to mean something: all 15 groups qualify. */
 export const MIN_TERMINI = 15;
 
@@ -63,11 +69,14 @@ export function quantile(ordinati, frazione) {
  * @param {number[]} p.termini - Values of the comparable sheets.
  * @param {string} p.unita - Unit of the indicator ('%', 'euro', 'mesi', ...).
  * @param {boolean} [p.meglioBasso] - Whether a lower value is better (waiting times).
+ * @param {number} [p.soglia] - Respondents needed for a score (default SOGLIA_RISPONDENTI).
  * @returns {EsitoVoto} Score, or the reason there is none.
  */
-export function calcolaVoto({ valore, rispondenti, termini, unita, meglioBasso = false }) {
+export function calcolaVoto({
+  valore, rispondenti, termini, unita, meglioBasso = false, soglia = SOGLIA_RISPONDENTI,
+}) {
   if (valore === null || valore === undefined) return { motivo: 'assente' };
-  if (rispondenti === null || rispondenti === undefined || rispondenti < SOGLIA_RISPONDENTI) {
+  if (rispondenti === null || rispondenti === undefined || rispondenti < soglia) {
     return { motivo: 'pochi-dati', rispondenti: rispondenti ?? 0 };
   }
   const ordinati = [...termini].sort((a, b) => a - b);

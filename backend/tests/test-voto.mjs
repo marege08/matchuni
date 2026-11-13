@@ -35,6 +35,12 @@ ok(calcolaVoto({ ...base, termini: [...venti].reverse(), valore: 15 }).voto === 
 
 ok(calcolaVoto({ ...base, valore: null }).motivo === 'assente', 'valore assente: niente voto');
 const pochi = calcolaVoto({ ...base, valore: 15, rispondenti: SOGLIA_RISPONDENTI - 1 });
+ok(calcolaVoto({ ...base, valore: 15, rispondenti: 20 }).motivo === 'pochi-dati',
+  'senza soglia, 20 rispondenti non bastano');
+ok(calcolaVoto({ ...base, valore: 15, rispondenti: 20, soglia: 15 }).voto === 7,
+  'con la soglia delle magistrali (15), 20 rispondenti bastano');
+ok(calcolaVoto({ ...base, valore: 15, rispondenti: 14, soglia: 15 }).motivo === 'pochi-dati',
+  'con la soglia a 15, 14 rispondenti non bastano');
 ok(pochi.motivo === 'pochi-dati' && pochi.rispondenti === 39, 'sotto i 40 rispondenti: niente voto', pochi);
 ok(calcolaVoto({ ...base, valore: 15, rispondenti: SOGLIA_RISPONDENTI }).voto === 7,
   'a 40 rispondenti esatti il voto c\'e\'');
