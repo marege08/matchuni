@@ -2094,6 +2094,10 @@ function renderVoti(datiPerColonna) {
     return el('div', { class: 'voti-riga', 'data-indicatore': ind.id },
       el('div', { class: 'voti-domanda' },
         el('strong', {}, lavoroCorsi ? 'Quanti lavorano o studiano ancora' : ind.titolo),
+        // The employment survey interviews graduates one year after the
+        // degree: without saying so, a salary reads as a graduate's salary
+        // in general.
+        ind.indagine === 'occupazione' ? el('span', { class: 'voti-quando' }, 'a un anno dalla laurea') : null,
         el('small', {}, lavoroCorsi
           ? `${LAVORA_STUDIA.categoria} › lavorano o sono iscritti a una laurea di secondo livello`
           : etichettaUfficiale(ind))),

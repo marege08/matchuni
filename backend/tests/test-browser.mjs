@@ -1669,6 +1669,19 @@ async function main() {
         dueLivelli.erroriConsole.length === 0, JSON.stringify({ ...due, errori: dueLivelli.erroriConsole }));
     dueLivelli.chiudi();
 
+    // Il lavoro e' a un anno dalla laurea: la vista Base lo scrive sotto le
+    // quattro domande di lavoro, e non sotto le due di studio.
+    const quando = await apriLink('?c=ateneo:70026');
+    await attendi(800);
+    const righeQuando = await quando.valuta(`[...document.querySelectorAll('#griglia-voti .voti-riga[data-indicatore]')]
+      .map((r) => [r.dataset.indicatore, r.querySelector('.voti-quando')?.textContent ?? null])`);
+    quando.chiudi();
+    verifica('«a un anno dalla laurea» sotto le 4 domande di lavoro, non sotto quelle di studio',
+      JSON.stringify(righeQuando) === JSON.stringify([
+        ['occupati', 'a un anno dalla laurea'], ['retribuzione', 'a un anno dalla laurea'],
+        ['primo-lavoro', 'a un anno dalla laurea'], ['efficacia', 'a un anno dalla laurea'],
+        ['in-corso', null], ['rifarebbero', null]]), JSON.stringify(righeQuando));
+
     // Magistrale e ciclo unico, e poi tutti e tre i tipi insieme (Bologna:
     // Medicina a ciclo unico, Informatica LM-18, Infermieristica triennale):
     // l'avviso nomina i tipi presenti sempre nello stesso ordine.
