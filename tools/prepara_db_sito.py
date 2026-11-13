@@ -50,6 +50,25 @@ comunque un file solo per ateneo.
     python3 tools/prepara_db_sito.py --solo 70002,70048 --out /tmp/prova
     python3 tools/prepara_db_sito.py --check        # verifica senza riscrivere
 
+LE MAGISTRALI (`--magistrali`)
+------------------------------
+Le magistrali biennali stanno in file A PARTE, `frontend/public/corsi-magistrali/`,
+scaricati solo quando si sceglie una magistrale: dentro `corsi/` raddoppierebbero
+il peso per chi guarda le triennali.
+
+    python3 tools/prepara_db_sito.py --magistrali \
+        --da ~/Documents/AlmaLaurea-raccolta-magistrali --out frontend/public/corsi-magistrali
+
+Con `--magistrali` la copia cambia l'ETICHETTA di 15 voci (mai un numero): le
+schede delle magistrali fanno alcune domande con parole proprie («Si
+iscriverebbero di nuovo al corso di laurea magistrale?») che vogliono dire la
+stessa cosa della domanda di triennali e aggregati («...all'universita'?»).
+Con l'etichetta comune la magistrale sta sulla stessa riga dell'ateneo e del
+voto. La tabella e' ETICHETTE_MAGISTRALI qui sotto (deciso da Mare il 13 nov
+2026); la copia si ferma se una voce della tabella non compare piu' nei dati
+o se un'etichetta d'arrivo non esiste negli aggregati, cosi' un cambio di
+parole di AlmaLaurea non passa in silenzio.
+
 Si lancia da qualunque cartella: i percorsi partono dalla radice del repository.
 """
 
@@ -116,20 +135,164 @@ def impronta(conn):
     return h.hexdigest(), n
 
 
-def unione_sola_lettura(percorsi):
+AGGREGATI = RADICE / "frontend" / "public" / "almalaurea.sqlite"
+
+# Etichette delle magistrali -> etichette di triennali e aggregati, per le voci
+# che vogliono dire la stessa cosa. Chiave: (categoria, indicatore) com'e' nelle
+# schede delle magistrali; `None` come indicatore vale per tutte le voci della
+# categoria, che tengono il loro nome. Valore: (categoria, indicatore) d'arrivo,
+# `None` = indicatore invariato. Gli apostrofi sono quelli di AlmaLaurea, dritti
+# o tipografici, copiati dai dati: non vanno «corretti».
+_ESTERO = ("Sono soddisfatti dell'esperienza di studio all'estero(per 100 che hanno "
+           "svolto esperienze di studio all'estero riconosciute dal corso che stanno "
+           "concludendo)")
+_RIFAREBBERO = "Si iscriverebbero di nuovo al corso di laurea magistrale? (%)"
+_RIFAREBBERO_ARRIVO = "Si iscriverebbero di nuovo all'università? (%)"
+ETICHETTE_MAGISTRALI = {
+    ("Motivazioni molto importanti nella scelta del corso di laurea magistrale (%)", None):
+        ("Motivazioni molto importanti nella scelta del corso di laurea (%)", None),
+    ("Sono complessivamente soddisfatti del corso di laurea magistrale (%)", None):
+        ("Sono complessivamente soddisfatti del corso di laurea (%)", None),
+    (_RIFAREBBERO, "Non si iscriverebbero più a nessun corso di laurea magistrale"):
+        (_RIFAREBBERO_ARRIVO, "Non si iscriverebbero più all'università"),
+    (_RIFAREBBERO, "Sì, allo stesso corso magistrale dell'Ateneo"):
+        (_RIFAREBBERO_ARRIVO, "Sì, allo stesso corso dell'Ateneo"),
+    (_RIFAREBBERO, "Sì, allo stesso corso magistrale, ma in un altro Ateneo"):
+        (_RIFAREBBERO_ARRIVO, "Sì, allo stesso corso ma in un altro Ateneo"),
+    (_RIFAREBBERO, "Sì, ma ad un altro corso magistrale dell'Ateneo"):
+        (_RIFAREBBERO_ARRIVO, "Sì, ma ad un altro corso dell'Ateneo"),
+    (_RIFAREBBERO, "Sì, ma ad un altro corso magistrale e in un altro Ateneo"):
+        (_RIFAREBBERO_ARRIVO, "Sì, ma ad un altro corso e in un altro Ateneo"),
+    ("Hanno frequentato regolarmente (%)",
+     "Hanno svolto periodi di studio all'estero durante il corso magistrale (%)"):
+        ("Hanno frequentato regolarmente (%)",
+         "Hanno svolto periodi di studio all’estero durante il corso di studio (%)"),
+    (_ESTERO, "Hanno svolto tirocini formativi curriculari o lavoro riconosciuti "
+              "dal corso di laurea magistrale (%)"):
+        (_ESTERO, "Hanno svolto tirocini formativi curriculari o lavoro riconosciuti "
+                  "dal corso di studio (%)"),
+}
+
+
+def _prepara_etichette(conn):
+    """Mette ETICHETTE_MAGISTRALI in due tabelle temporanee della connessione,
+    lette dalla vista `dati` di unione_sola_lettura()."""
+    conn.execute("CREATE TEMP TABLE _r_cat (da TEXT PRIMARY KEY, a TEXT NOT NULL)")
+    conn.execute("CREATE TEMP TABLE _r_ind (cat TEXT, da TEXT, a_cat TEXT NOT NULL, "
+                 "a TEXT NOT NULL, PRIMARY KEY (cat, da))")
+    for (cat, ind), (a_cat, a_ind) in ETICHETTE_MAGISTRALI.items():
+        if ind is None:
+            conn.execute("INSERT INTO _r_cat VALUES (?, ?)", (cat, a_cat))
+        else:
+            conn.execute("INSERT INTO _r_ind VALUES (?, ?, ?, ?)",
+                         (cat, ind, a_cat, a_ind if a_ind is not None else ind))
+
+
+def _colonne_rinominate():
+    """La lista delle colonne per la vista, con categoria e indicatore passati
+    per la tabella delle etichette. Solo le righe `LS` cambiano: una riga di
+    un altro tipo con le stesse parole resta com'e'."""
+    nuova_cat = ("CASE WHEN tipo_corso = 'LS' THEN COALESCE("
+                 "(SELECT a_cat FROM _r_ind WHERE cat = categoria AND da = indicatore), "
+                 "(SELECT a FROM _r_cat WHERE da = categoria), categoria) "
+                 "ELSE categoria END AS categoria")
+    nuovo_ind = ("CASE WHEN tipo_corso = 'LS' THEN COALESCE("
+                 "(SELECT a FROM _r_ind WHERE cat = categoria AND da = indicatore), "
+                 "indicatore) ELSE indicatore END AS indicatore")
+    return [nuova_cat if c == "categoria" else nuovo_ind if c == "indicatore" else c
+            for c in COLONNE]
+
+
+def unione_sola_lettura(percorsi, magistrali=False):
     """Una connessione in memoria con una vista `dati` che e' l'unione delle
     tabelle `dati` di tutti i database dati, aperti in sola lettura.
 
     Serve a calcolare l'impronta di quello che la copia DEVE contenere quando
-    le righe arrivano da piu' raccolte: stesso ORDER BY, stessa funzione."""
+    le righe arrivano da piu' raccolte: stesso ORDER BY, stessa funzione.
+    Con `magistrali` la vista ha gia' le etichette di ETICHETTE_MAGISTRALI, e
+    `grezza` resta l'unione com'e' nelle raccolte."""
     conn = sqlite3.connect(":memory:", uri=True)
     pezzi = []
     for i, percorso in enumerate(percorsi):
         conn.execute(f"ATTACH DATABASE ? AS s{i}",
                      (f"{percorso.resolve().as_uri()}?mode=ro",))
         pezzi.append(f"SELECT {','.join(COLONNE)} FROM s{i}.dati")
-    conn.execute(f"CREATE TEMP VIEW dati AS {' UNION ALL '.join(pezzi)}")
+    conn.execute(f"CREATE TEMP VIEW grezza AS {' UNION ALL '.join(pezzi)}")
+    if magistrali:
+        _prepara_etichette(conn)
+        conn.execute(f"CREATE TEMP VIEW dati AS SELECT {','.join(_colonne_rinominate())} "
+                     f"FROM grezza")
+    else:
+        conn.execute("CREATE TEMP VIEW dati AS SELECT * FROM grezza")
     return conn
+
+
+def controlla_etichette(cartelle):
+    """Controlla ETICHETTE_MAGISTRALI contro i dati prima di copiare.
+
+    Ogni voce della tabella deve comparire in almeno una riga `LS` delle
+    raccolte (se AlmaLaurea cambia le parole, la tabella non sta piu' facendo
+    niente e nessuno se ne accorgerebbe), e ogni etichetta d'arrivo deve
+    esistere negli aggregati del sito (se no la riga non si allinea a niente).
+    Ritorna la lista dei problemi, vuota se va tutto bene."""
+    problemi = []
+    usate = set()
+    # Le coppie (categoria, indicatore) che la copia scrivera' davvero: per una
+    # categoria rinominata per intero sono le sue voci di OGGI, una per una, cosi'
+    # una voce nuova che negli aggregati non esiste non passa col solo nome
+    # della categoria.
+    arrivi = set()
+    for cartella in cartelle:
+        for percorso in sorted(cartella.glob("*.sqlite")):
+            c = apri_sola_lettura(percorso)
+            try:
+                for cat, ind in c.execute(
+                        "SELECT DISTINCT categoria, indicatore FROM dati WHERE tipo_corso = 'LS'"):
+                    if (cat, ind) in ETICHETTE_MAGISTRALI:
+                        usate.add((cat, ind))
+                        a_cat, a_ind = ETICHETTE_MAGISTRALI[(cat, ind)]
+                        arrivi.add((a_cat, a_ind if a_ind is not None else ind))
+                    elif (cat, None) in ETICHETTE_MAGISTRALI:
+                        usate.add((cat, None))
+                        arrivi.add((ETICHETTE_MAGISTRALI[(cat, None)][0], ind))
+            finally:
+                c.close()
+    for voce in ETICHETTE_MAGISTRALI:
+        if voce not in usate:
+            problemi.append(f"la voce {voce} non compare in nessuna magistrale")
+    a = apri_sola_lettura(AGGREGATI)
+    try:
+        for a_cat, a_ind in sorted(arrivi):
+            trovata = a.execute("SELECT 1 FROM dati WHERE categoria = ? AND indicatore = ? "
+                                "LIMIT 1", (a_cat, a_ind)).fetchone()
+            if not trovata:
+                problemi.append(f"l'etichetta d'arrivo {(a_cat, a_ind)} non c'e' negli aggregati")
+    finally:
+        a.close()
+    return problemi
+
+
+def tipi_fuori_posto(per_ateneo, magistrali):
+    """I database di partenza che hanno corsi del tipo sbagliato per la copia.
+
+    Con `--magistrali` le sorgenti devono avere solo righe `LS`; senza, nessuna
+    riga `LS`. Le guardie su `--out` guardano il flag; questa guarda il
+    contenuto, cosi' una raccolta passata alla cartella sbagliata (le
+    magistrali in `corsi/`, le triennali insieme alle magistrali) si ferma
+    prima di scrivere. Ritorna la lista dei problemi."""
+    problemi = []
+    for sorgenti in per_ateneo.values():
+        for s in sorgenti:
+            c = apri_sola_lettura(s)
+            try:
+                tipi = {t for (t,) in c.execute("SELECT DISTINCT tipo_corso FROM dati")}
+            finally:
+                c.close()
+            fuori = (tipi - {"LS"}) if magistrali else (tipi & {"LS"})
+            if fuori:
+                problemi.append(f"{s}: tipo_corso {sorted(fuori)} non va "
+                                f"{'con' if magistrali else 'senza'} --magistrali")
+    return problemi
 
 
 def chiavi_doppie(conn):
@@ -167,7 +330,7 @@ def stato_ateneo(conn):
     return corsi, fatte, inesistenti, attese
 
 
-def copia(sorgenti, destinazione):
+def copia(sorgenti, destinazione, magistrali=False):
     """Scrive la copia compatta di uno o piu' database dello stesso ateneo e ne
     verifica il contenuto. Ritorna (righe, peso_prima, peso_dopo).
 
@@ -177,7 +340,7 @@ def copia(sorgenti, destinazione):
     temp = destinazione.with_suffix(".sqlite.parziale")
     temp.unlink(missing_ok=True)
 
-    letto = unione_sola_lettura(sorgenti)
+    letto = unione_sola_lettura(sorgenti, magistrali)
     scritto = sqlite3.connect(str(temp))
     try:
         doppie = chiavi_doppie(letto)
@@ -219,12 +382,12 @@ def copia(sorgenti, destinazione):
     return n_atteso, peso_prima, peso_dopo
 
 
-def verifica(sorgenti, destinazione):
+def verifica(sorgenti, destinazione, magistrali=False):
     """Il `--check`: la copia esiste e contiene gli stessi dati? Non riscrive
     niente. Ritorna (esito, messaggio)."""
     if not destinazione.exists():
         return False, "manca"
-    a = unione_sola_lettura(sorgenti)
+    a = unione_sola_lettura(sorgenti, magistrali)
     b = apri_sola_lettura(destinazione)
     try:
         indici = b.execute("SELECT COUNT(*) FROM sqlite_master "
@@ -260,7 +423,17 @@ def main():
                    help="copia anche gli atenei con schede ancora da raccogliere")
     p.add_argument("--check", action="store_true",
                    help="verifica le copie gia' fatte senza riscriverle")
+    p.add_argument("--magistrali", action="store_true",
+                   help="raccolta delle magistrali: etichette di ETICHETTE_MAGISTRALI, "
+                        "--da e --out obbligatori")
     a = p.parse_args()
+    # Percorsi confrontati risolti, non come stringhe: «~/...» o una barra
+    # finale non devono bastare a passare la guardia.
+    if a.magistrali and (not a.da or Path(a.out).expanduser().resolve() == CARTELLA_OUT.resolve()):
+        # Il default di --out e' la cartella delle triennali: una copia delle
+        # magistrali li' finirebbe mescolata a un'altra raccolta.
+        print(f"--magistrali vuole --da e un --out diverso da {CARTELLA_OUT}", file=sys.stderr)
+        return 2
 
     # Relativo = dalla radice del repository, come --out in raccogli_corsi.py.
     cartelle = [Path(x).expanduser() for x in (a.da or [str(CARTELLA_DA)])]
@@ -272,17 +445,26 @@ def main():
     # e un `--out frontend/public` con un ateneo chiamato "almalaurea" o una
     # distrazione futura lo sovrascriverebbe con dati di un altro livello.
     # Stessa guardia di `--incrocio senza --db` in esegui_harvest.py.
-    # L'unica eccezione e' `frontend/public/corsi`, la cartella da cui il sito
-    # scarica i corsi un ateneo alla volta (js/db-corsi.js): li' non c'e'
-    # nient'altro da sovrascrivere. Deve essere ESATTAMENTE quella, non una sua
-    # sottocartella, perche' il sito cerca `corsi/<ateneo>.sqlite` e nient'altro.
+    # Le uniche eccezioni sono `frontend/public/corsi` e `corsi-magistrali`, le
+    # cartelle da cui il sito scarica i corsi un ateneo alla volta
+    # (js/db-corsi.js): li' non c'e' nient'altro da sovrascrivere. Devono essere
+    # ESATTAMENTE quelle, non una sottocartella, perche' il sito cerca
+    # `corsi/<ateneo>.sqlite` e `corsi-magistrali/<ateneo>.sqlite` e nient'altro.
+    # E ognuna col suo tipo: le magistrali solo in `corsi-magistrali`, e li'
+    # solo le magistrali.
     pubblico = (RADICE / "frontend" / "public").resolve()
     corsi_sito = pubblico / "corsi"
-    if out.resolve() != corsi_sito and (
+    magistrali_sito = pubblico / "corsi-magistrali"
+    if out.resolve() not in (corsi_sito, magistrali_sito) and (
             out.resolve() == pubblico or pubblico in out.resolve().parents):
         print(f"--out non puo' stare dentro {pubblico}: li' c'e' il database "
-              f"che il sito pubblica. L'unica cartella ammessa e' {corsi_sito}.",
-              file=sys.stderr)
+              f"che il sito pubblica. Le uniche cartelle ammesse sono {corsi_sito} "
+              f"e {magistrali_sito}.", file=sys.stderr)
+        return 2
+    if out.resolve() in (corsi_sito, magistrali_sito) and (
+            (out.resolve() == magistrali_sito) != a.magistrali):
+        print(f"{magistrali_sito} e --magistrali vanno insieme: li' solo le "
+              f"magistrali, e le magistrali solo li'.", file=sys.stderr)
         return 2
 
     for da in cartelle:
@@ -306,6 +488,21 @@ def main():
         print("Nessun database nelle cartelle di partenza", file=sys.stderr)
         return 2
 
+    problemi = tipi_fuori_posto(per_ateneo, a.magistrali)
+    for problema in problemi:
+        print(f"TIPO: {problema}", file=sys.stderr)
+    if problemi:
+        return 2
+
+    if a.magistrali:
+        problemi = controlla_etichette(cartelle)
+        for problema in problemi:
+            print(f"ETICHETTE: {problema}", file=sys.stderr)
+        if problemi:
+            return 2
+        print(f"Etichette delle magistrali: {len(ETICHETTE_MAGISTRALI)} righe della "
+              f"tabella, tutte presenti nelle raccolte e negli aggregati")
+
     print(f"{'Verifica' if a.check else 'Preparazione'} — {len(per_ateneo)} atenei")
     for da in cartelle:
         print(f"  da:  {da}")
@@ -319,7 +516,7 @@ def main():
     for codice, sorgenti in sorted(per_ateneo.items()):
         destinazione = out / f"{codice}.sqlite"
         if a.check:
-            ok, messaggio = verifica(sorgenti, destinazione)
+            ok, messaggio = verifica(sorgenti, destinazione, a.magistrali)
             print(f"  {codice}: {'ok' if ok else 'ROTTO'} — {messaggio}")
             fatti += ok
             rotti += not ok
@@ -341,7 +538,7 @@ def main():
             continue
 
         try:
-            righe, prima, dopo = copia(sorgenti, destinazione)
+            righe, prima, dopo = copia(sorgenti, destinazione, a.magistrali)
         except Exception as e:
             print(f"  {codice}: FALLITO — {type(e).__name__}: {e}")
             rotti += 1

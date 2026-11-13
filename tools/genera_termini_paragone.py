@@ -37,7 +37,10 @@ import sys
 from pathlib import Path
 
 RADICE = Path(__file__).resolve().parent.parent
-CORSI_SITO = RADICE / "frontend" / "public" / "corsi"
+# The site's course folders: first-level and single-cycle courses, and the
+# second-level ones, which the site downloads apart.
+CARTELLE_SITO = (RADICE / "frontend" / "public" / "corsi",
+                 RADICE / "frontend" / "public" / "corsi-magistrali")
 INDICATORI_CHIAVE = RADICE / "frontend" / "public" / "js" / "indicatori-chiave.js"
 USCITA = RADICE / "frontend" / "public" / "js" / "termini-paragone.js"
 
@@ -63,10 +66,11 @@ INTESTAZIONE = """/**
  * respondents, by discipline group, sorted. Employment indicators have one
  * list per definition of "employed". A course is ranked only against courses
  * of its own type: "valori" holds the first-level courses, "valoriCicloUnico"
- * the single-cycle ones.
+ * the single-cycle ones, "valoriMagistrali" the second-level ones.
  *
- * {corsi} first-level and {corsi_lse} single-cycle courses from {atenei}
- * universities, read from frontend/public/corsi/. "lavora-studia" (first-level
+ * {corsi} first-level, {corsi_lse} single-cycle and {corsi_ls} second-level
+ * courses from {atenei} universities, read from frontend/public/corsi/ and
+ * corsi-magistrali/. "lavora-studia" (first-level
  * courses only) is the sum of the three positive answers of "{categoria}";
  * every other value is copied as published.
  *
@@ -128,9 +132,10 @@ def leggi_corsi(indicatori, tipo_corso="L"):
 
     Args:
         indicatori: Key indicators from leggi_indicatori().
-        tipo_corso: 'L' (first level) or 'LSE' (single cycle). Only first-level
-            courses get "lavora-studia": single-cycle graduates have finished
-            their studies, so their plain employment rate is not misleading.
+        tipo_corso: 'L' (first level), 'LSE' (single cycle) or 'LS' (second
+            level). Only first-level courses get "lavora-studia": single-cycle
+            and second-level graduates have finished their studies, so their
+            plain employment rate is not misleading.
 
     Returns:
         (valori, corsi, atenei): valori is {"profilo": {id: {gruppo: [..]}},
@@ -139,9 +144,12 @@ def leggi_corsi(indicatori, tipo_corso="L"):
     """
     valori = {"profilo": {}, "occupazione": {d: {} for d in DEFINIZIONI}}
     corsi = set()
-    database = sorted(CORSI_SITO.glob("*.sqlite"))
-    if not database:
-        sys.exit(f"Nessun database dei corsi in {CORSI_SITO}")
+    database = []
+    for cartella in CARTELLE_SITO:
+        trovati = sorted(cartella.glob("*.sqlite"))
+        if not trovati:
+            sys.exit(f"Nessun database dei corsi in {cartella}")
+        database += trovati
     for percorso in database:
         conn = apri_sola_lettura(percorso)
         try:
@@ -184,7 +192,7 @@ def leggi_corsi(indicatori, tipo_corso="L"):
                     aggiungi(valori["occupazione"][definizione], "lavora-studia", gruppo, somma)
         finally:
             conn.close()
-    return valori, len(corsi), len(database)
+    return valori, len(corsi), len({p.stem for p in database})
 
 
 def lavora_o_studia(voci):
@@ -218,7 +226,7 @@ def ordina(valori):
     return {k: ordina(valori[k]) for k in sorted(valori, key=lambda k: (len(k), k))}
 
 
-def rendi(indicatori, valori, corsi, atenei, valori_lse, corsi_lse):
+def rendi(indicatori, valori, corsi, atenei, valori_lse, corsi_lse, valori_ls, corsi_ls):
     """Render the JavaScript module.
 
     Args:
@@ -228,6 +236,8 @@ def rendi(indicatori, valori, corsi, atenei, valori_lse, corsi_lse):
         atenei: Number of university databases read.
         valori_lse: Values of the single-cycle courses.
         corsi_lse: Number of single-cycle courses read.
+        valori_ls: Values of the second-level courses.
+        corsi_ls: Number of second-level courses read.
 
     Returns:
         The module text.
@@ -238,9 +248,11 @@ def rendi(indicatori, valori, corsi, atenei, valori_lse, corsi_lse):
         "lavoraStudia": {"categoria": CATEGORIA_LAVORA_STUDIA, "voci": list(VOCI_LAVORA_STUDIA)},
         "valori": ordina(valori),
         "valoriCicloUnico": ordina(valori_lse),
+        "valoriMagistrali": ordina(valori_ls),
     }
     testo = INTESTAZIONE.format(soglia=SOGLIA_RISPONDENTI, corsi=f"{corsi:,}".replace(",", "."),
                                 corsi_lse=f"{corsi_lse:,}".replace(",", "."),
+                                corsi_ls=f"{corsi_ls:,}".replace(",", "."),
                                 atenei=atenei, categoria=CATEGORIA_LAVORA_STUDIA)
     testo += "\nexport const TERMINI_PARAGONE = "
     testo += json.dumps(contenuto, ensure_ascii=False, separators=(",", ":"))
@@ -258,12 +270,14 @@ def main():
     indicatori = leggi_indicatori()
     valori, corsi, atenei = leggi_corsi(indicatori, "L")
     valori_lse, corsi_lse, _ = leggi_corsi(indicatori, "LSE")
-    for etichetta, v in (("triennali", valori), ("ciclo unico", valori_lse)):
+    valori_ls, corsi_ls, _ = leggi_corsi(indicatori, "LS")
+    for etichetta, v in (("triennali", valori), ("ciclo unico", valori_lse),
+                         ("magistrali", valori_ls)):
         for indagine, chiavi in (("profilo", v["profilo"]),
                                  *((f"occupazione/{d}", v["occupazione"][d]) for d in DEFINIZIONI)):
             quanti = {k: sum(len(x) for x in g.values()) for k, g in sorted(chiavi.items())}
             print(f"{etichetta}, {indagine}: {quanti}")
-    testo = rendi(indicatori, valori, corsi, atenei, valori_lse, corsi_lse)
+    testo = rendi(indicatori, valori, corsi, atenei, valori_lse, corsi_lse, valori_ls, corsi_ls)
 
     nome = USCITA.relative_to(RADICE)
     if argomenti.check:

@@ -47,17 +47,27 @@
  *
  * DOMANDE SOLO-CORSO (`soloCorso: true`): esistono nelle schede dei singoli
  * corsi e non in quelle di atenei e gruppi. Gli aggregati mettono insieme
- * tutti i tipi di laurea (tipo_corso = ''), i corsi sono lauree di primo
- * livello (tipo_corso = 'L'), e le domande su cosa succede DOPO la triennale
- * (iscrizione alla magistrale, lavora/studia) hanno senso solo li'. La UI le
+ * tutti i tipi di laurea (tipo_corso = ''), ogni corso e' di un tipo solo, e
+ * certe domande hanno senso solo li': cosa succede DOPO la triennale
+ * (iscrizione alla magistrale, lavora/studia) e, per le magistrali, la laurea
+ * di provenienza (ateneo, gruppo, voto, regolarita'). La UI le
  * mostra solo quando il confronto contiene almeno una colonna corso; la
  * proprieta' manca, invece di valere false, su tutte le altre voci.
+ *
+ * VOCI SOLO-CORSO DENTRO UNA DOMANDA DEGLI AGGREGATI (`indicatoriSoloCorso`):
+ * le opzioni di una domanda che atenei e gruppi non pubblicano, perche' poste
+ * a un tipo di laurea solo (per esempio dottorato e master di II livello, o
+ * l'estero «riconosciuto solo nel precedente corso» delle magistrali). La UI
+ * le tratta come le domande solo-corso, opzione per opzione.
  *
  * Nota su una stranezza ereditata dai dati originali, NON corretta a
  * mano: nella sezione 1 la categoria "Eta' alla laurea (%)" include
  * anche "Cittadini stranieri (%)" come indicatore. E' cosi' nella
  * struttura ufficiale della scheda AlmaLaurea (non e' un bug del
- * parser di Fase 0): si lascia com'e', per fedelta' alla fonte.
+ * parser di Fase 0): si lascia com'e', per fedelta' alla fonte. Lo
+ * stesso nelle magistrali: «Regolarita' negli studi del precedente titolo
+ * universitario» ha fra le opzioni anche il voto medio della laurea
+ * precedente (in 110-mi), accanto alle percentuali.
  */
 
 export const CONFIG_FILTRI = {
@@ -115,6 +125,24 @@ export const CONFIG_FILTRI = {
       ]
     },
     {
+      "id": "ateneo_di_conseguimento_del_precedente_titolo_universitario_per_100_che_hanno_un",
+      "label": "Ateneo di conseguimento del precedente titolo universitario(per 100 che hanno un precedente titolo di primo livello italiano)",
+      "indagine": "profilo",
+      "definizioni": [
+        ""
+      ],
+      "sezione": "4. RIUSCITA NEGLI STUDI UNIVERSITARI",
+      "categoria": "Ateneo di conseguimento del precedente titolo universitario(per 100 che hanno un precedente titolo di primo livello italiano)",
+      "indicatori": [
+        "Altro Ateneo del Centro",
+        "Altro Ateneo del Nord",
+        "Altro Ateneo del Sud-Isole",
+        "Altro Ateneo italiano telematico",
+        "Stesso Ateneo della laurea magistrale"
+      ],
+      "soloCorso": true
+    },
+    {
       "id": "eta_all_immatricolazione",
       "label": "Età all'immatricolazione (%)",
       "indagine": "profilo",
@@ -128,6 +156,22 @@ export const CONFIG_FILTRI = {
         "Punteggio degli esami (medie, in 30-mi)",
         "Regolare o 1 anno di ritardo"
       ]
+    },
+    {
+      "id": "gruppo_disciplinare_del_precedente_titolo_universitario_per_100_che_hanno_un_pre",
+      "label": "Gruppo disciplinare del precedente titolo universitario(per 100 che hanno un precedente titolo di primo livello italiano)",
+      "indagine": "profilo",
+      "definizioni": [
+        ""
+      ],
+      "sezione": "4. RIUSCITA NEGLI STUDI UNIVERSITARI",
+      "categoria": "Gruppo disciplinare del precedente titolo universitario(per 100 che hanno un precedente titolo di primo livello italiano)",
+      "indicatori": [
+        "Altra area disciplinare",
+        "Altro gruppo della laurea magistrale ma stessa area disciplinare",
+        "Stesso gruppo disciplinare della laurea magistrale"
+      ],
+      "soloCorso": true
     },
     {
       "id": "motivazione_principale_nella_scelta_di_un_corso_completamente_in_teledidattica_p",
@@ -183,6 +227,39 @@ export const CONFIG_FILTRI = {
       ]
     },
     {
+      "id": "regolarita_negli_studi_del_precedente_titolo_universitario_per_100_che_hanno_un",
+      "label": "Regolarità negli studi del precedente titolo universitario(per 100 che hanno un precedente titolo di primo livello italiano in Atenei non telematici)",
+      "indagine": "profilo",
+      "definizioni": [
+        ""
+      ],
+      "sezione": "4. RIUSCITA NEGLI STUDI UNIVERSITARI",
+      "categoria": "Regolarità negli studi del precedente titolo universitario(per 100 che hanno un precedente titolo di primo livello italiano in Atenei non telematici)",
+      "indicatori": [
+        "1° anno fuori corso",
+        "2° anno fuori corso e oltre",
+        "In corso",
+        "Voto di laurea del precedente titolo universitario(medie, in 110-mi; per 100 che hanno un precedente titolo di primo livello italiano)"
+      ],
+      "soloCorso": true
+    },
+    {
+      "id": "titolo_universitario_precedente_all_iscrizione_alla_laurea_magistrale",
+      "label": "Titolo universitario precedente all'iscrizione alla laurea magistrale (%)",
+      "indagine": "profilo",
+      "definizioni": [
+        ""
+      ],
+      "sezione": "4. RIUSCITA NEGLI STUDI UNIVERSITARI",
+      "categoria": "Titolo universitario precedente all'iscrizione alla laurea magistrale (%)",
+      "indicatori": [
+        "Altro titolo italiano",
+        "Titolo di primo livello italiano",
+        "Titolo estero"
+      ],
+      "soloCorso": true
+    },
+    {
       "id": "voto_di_laurea",
       "label": "Voto di laurea (%)",
       "indagine": "profilo",
@@ -210,6 +287,34 @@ export const CONFIG_FILTRI = {
       "categoria": "",
       "indicatori": [
         "Altra laurea di primo livello"
+      ],
+      "soloCorso": true
+    },
+    {
+      "id": "altra_laurea_magistrale_a_ciclo_unico",
+      "label": "Altra laurea magistrale a ciclo unico",
+      "indagine": "profilo",
+      "definizioni": [
+        ""
+      ],
+      "sezione": "9. PROSPETTIVE DI STUDIO",
+      "categoria": "",
+      "indicatori": [
+        "Altra laurea magistrale a ciclo unico"
+      ],
+      "soloCorso": true
+    },
+    {
+      "id": "altra_laurea_magistrale_biennale",
+      "label": "Altra laurea magistrale biennale",
+      "indagine": "profilo",
+      "definizioni": [
+        ""
+      ],
+      "sezione": "9. PROSPETTIVE DI STUDIO",
+      "categoria": "",
+      "indicatori": [
+        "Altra laurea magistrale biennale"
       ],
       "soloCorso": true
     },
@@ -1210,10 +1315,16 @@ export const CONFIG_FILTRI = {
         "Attività sostenuta da borsa di studio",
         "Collaborazione volontaria",
         "Corso di formazione professionale",
+        "Dottorato di ricerca",
         "Master universitario di primo livello",
+        "Master universitario di secondo livello",
         "Scuola di specializzazione",
         "Stage in azienda",
         "Tirocinio/praticantato"
+      ],
+      "indicatoriSoloCorso": [
+        "Dottorato di ricerca",
+        "Master universitario di secondo livello"
       ]
     },
     {
@@ -1622,11 +1733,15 @@ export const CONFIG_FILTRI = {
         "Hanno preparato all'estero una parte significativa della tesi(per 100 che hanno svolto esperienze di studio all'estero riconosciute dal corso che stanno concludendo)",
         "Hanno svolto periodi di studio all’estero durante il corso di studio (%)",
         "Hanno svolto periodi di studio all’estero riconosciuti dal corso di studio",
+        "Hanno svolto periodi di studio all’estero riconosciuti solo nel precedente corso di studio",
         "Hanno usufruito del servizio di borse di studio offerto dall'organismo per il Diritto allo Studio",
         "Meno del 25%",
         "Più del 75% degli insegnamenti previsti",
         "Tra il 25% e il 50%",
         "Tra il 50% e il 75%"
+      ],
+      "indicatoriSoloCorso": [
+        "Hanno svolto periodi di studio all’estero riconosciuti solo nel precedente corso di studio"
       ]
     },
     {
@@ -1675,10 +1790,14 @@ export const CONFIG_FILTRI = {
         "Decisamente no",
         "Decisamente sì",
         "Hanno svolto tirocini formativi curriculari o lavoro riconosciuti dal corso di studio (%)",
+        "Hanno svolto tirocini formativi curriculari o lavoro riconosciuti solo nel precedente corso di studio",
         "Più no che sì",
         "Più sì che no",
         "Tirocini curriculari organizzati dal corso e svolti al di fuori dell'università",
         "Tirocini curriculari organizzati dal corso e svolti presso l'università"
+      ],
+      "indicatoriSoloCorso": [
+        "Hanno svolto tirocini formativi curriculari o lavoro riconosciuti solo nel precedente corso di studio"
       ]
     },
     {

@@ -11,9 +11,10 @@ the module without the collection, as with ateneo-numero.txt.
 
 WHAT IT DOES:
   - with --da, refreshes nomi-corso.tsv from the `_corsi` tables;
-  - CHECKS coverage against frontend/public/corsi/*.sqlite: every course in
-    the site databases must have a name under its own university, and every
-    name must belong to a course in the site databases;
+  - CHECKS coverage against frontend/public/corsi/*.sqlite and
+    frontend/public/corsi-magistrali/*.sqlite: every course in the site
+    databases must have a name under its own university, and every name must
+    belong to a course in the site databases;
   - rewrites frontend/public/js/nomi-corso.js.
 
 Names are copied exactly as AlmaLaurea writes them. Capitalization is a
@@ -21,7 +22,8 @@ presentation choice and belongs to the stylesheet, not to the data.
 
 USAGE:
     python3 tools/genera_nomi_corso.py --da ~/Documents/AlmaLaurea-raccolta-corsi \
-        --da ~/Documents/AlmaLaurea-raccolta-ciclo-unico   # --da once per collection
+        --da ~/Documents/AlmaLaurea-raccolta-ciclo-unico \
+        --da ~/Documents/AlmaLaurea-raccolta-magistrali   # --da once per collection
     python3 tools/genera_nomi_corso.py            # writes the module from the TSV
     python3 tools/genera_nomi_corso.py --check    # does not write; only checks
 """
@@ -34,7 +36,10 @@ from pathlib import Path
 
 RADICE = Path(__file__).resolve().parent.parent
 SORGENTE = RADICE / "backend" / "dati-sorgente" / "nomi-corso.tsv"
-CORSI_SITO = RADICE / "frontend" / "public" / "corsi"
+# The site's course folders: first-level and single-cycle courses, and the
+# second-level ones, kept apart so they are downloaded only when chosen.
+CARTELLE_SITO = (RADICE / "frontend" / "public" / "corsi",
+                 RADICE / "frontend" / "public" / "corsi-magistrali")
 USCITA = RADICE / "frontend" / "public" / "js" / "nomi-corso.js"
 
 COLONNE_TSV = ("ateneo", "gruppo", "codice", "nome")
@@ -48,13 +53,14 @@ INTESTAZIONE = """/**
  * backend/dati-sorgente/nomi-corso.tsv, non scritti a mano ne' ritoccati.
  *
  * {corsi} corsi su {atenei} atenei, verificati 1:1 contro i database in
- * frontend/public/corsi/ (0 mancanti, 0 estranei). Dentro ogni ateneo i
+ * frontend/public/corsi/ e corsi-magistrali/ (0 mancanti, 0 estranei). Dentro ogni ateneo i
  * corsi sono in ordine alfabetico: un menu li puo' mostrare direttamente,
  * senza scaricare il database dell'ateneo.
  *
  * CICLO_UNICO contiene i codici dei corsi di laurea magistrale a ciclo
- * unico (tipo_corso 'LSE' nei database del sito); un corso che non c'e' e'
- * una laurea di primo livello.
+ * unico (tipo_corso 'LSE' nei database del sito), MAGISTRALI quelli delle
+ * lauree magistrali biennali (tipo_corso 'LS', in corsi-magistrali/); un
+ * corso che non sta in nessuno dei due e' una laurea di primo livello.
  *
  * Rigenerato da tools/genera_nomi_corso.py, non modificato a mano.
  */
@@ -147,12 +153,17 @@ def costruisci_mappa(righe):
     """
     problemi = []
     per_ateneo = {}
-    visti = {}
+    # A code is unique within its university, not across Italy: an
+    # inter-university master's degree (0580107307100001, Sapienza and Tuscia)
+    # has one code and a separate sheet in each university. Every lookup on
+    # the site goes through the university first, so only a repeat inside the
+    # same university is a problem.
+    visti = set()
     for ateneo, _gruppo, codice, nome in righe:
-        if codice in visti:
-            problemi.append(f"codice {codice} ripetuto (atenei {visti[codice]} e {ateneo})")
+        if (ateneo, codice) in visti:
+            problemi.append(f"codice {codice} ripetuto nell'ateneo {ateneo}")
             continue
-        visti[codice] = ateneo
+        visti.add((ateneo, codice))
         per_ateneo.setdefault(ateneo, []).append((codice, nome))
     mappa = {}
     for ateneo in sorted(per_ateneo):
@@ -169,26 +180,51 @@ def verifica_copertura(mappa):
 
     Returns:
         A list of coverage problems, empty when coverage is complete, and the
-        set of single-cycle course codes ('LSE') read from the same databases.
+        sets of single-cycle ('LSE') and second-level ('LS') course codes read
+        from the same databases.
     """
-    file_sito = sorted(CORSI_SITO.glob("*.sqlite"))
-    if not file_sito:
-        return [f"nessun database in {CORSI_SITO}: copertura non verificata"], set()
+    problemi = []
+    file_sito = []
+    for cartella in CARTELLE_SITO:
+        trovati = sorted(cartella.glob("*.sqlite"))
+        if not trovati:
+            problemi.append(f"nessun database in {cartella}: copertura non verificata")
+        file_sito += trovati
+    if problemi:
+        return problemi, set(), set()
     nel_sito = set()
     ciclo_unico = set()
+    magistrali = set()
+    tipi_del_codice = {}
+    fuori_posto = []
     for percorso in file_sito:
+        # The site picks the folder from the degree type, so the second-level
+        # folder must hold only 'LS' courses and the other none.
+        cartella_magistrali = percorso.parent.name == "corsi-magistrali"
         conn = apri_sola_lettura(percorso)
         try:
             for ateneo, corso, tipo in conn.execute(
                 "SELECT DISTINCT ateneo, corso, tipo_corso FROM dati WHERE corso != ''"
             ):
                 nel_sito.add((ateneo, corso))
+                tipi_del_codice.setdefault(corso, set()).add(tipo)
+                if (tipo == "LS") != cartella_magistrali:
+                    fuori_posto.append(f"{percorso.parent.name}/{percorso.name}: {corso} ({tipo})")
                 if tipo == "LSE":
                     ciclo_unico.add(corso)
+                elif tipo == "LS":
+                    magistrali.add(corso)
         finally:
             conn.close()
+    if fuori_posto:
+        problemi.append(f"{len(fuori_posto)} corsi nella cartella sbagliata per il loro tipo: {fuori_posto[:5]}")
+    # CICLO_UNICO and MAGISTRALI are sets of codes and the site reads the type
+    # from the code alone: a code repeated across universities (an
+    # inter-university course) must have the same type everywhere.
+    misti = sorted(c for c, t in tipi_del_codice.items() if len(t) > 1)
+    if misti:
+        problemi.append(f"{len(misti)} codici con piu' di un tipo di laurea: {misti[:5]}")
     con_nome = {(a, c) for a, corsi in mappa.items() for c in corsi}
-    problemi = []
     mancanti = sorted(nel_sito - con_nome)
     estranei = sorted(con_nome - nel_sito)
     if mancanti:
@@ -197,16 +233,18 @@ def verifica_copertura(mappa):
         problemi.append(f"{len(estranei)} nomi senza corso nei database: {estranei[:10]}")
     if not problemi:
         print(f"Copertura {len(nel_sito)}/{len(nel_sito)} su {len(file_sito)} database "
-              f"(0 mancanti, 0 estranei), {len(ciclo_unico)} a ciclo unico")
-    return problemi, ciclo_unico
+              f"(0 mancanti, 0 estranei), {len(ciclo_unico)} a ciclo unico, "
+              f"{len(magistrali)} magistrali")
+    return problemi, ciclo_unico, magistrali
 
 
-def rendi(mappa, ciclo_unico):
+def rendi(mappa, ciclo_unico, magistrali):
     """Render nomi-corso.js.
 
     Args:
         mappa: {ateneo: {codice: nome}} mapping.
         ciclo_unico: Codes of the single-cycle courses.
+        magistrali: Codes of the second-level courses.
 
     Returns:
         The generated JavaScript module text.
@@ -216,8 +254,10 @@ def rendi(mappa, ciclo_unico):
     intestazione = intestazione.replace("{atenei}", str(len(mappa)))
     corpo = json.dumps(mappa, indent=2, ensure_ascii=False)
     codici = json.dumps(sorted(ciclo_unico), indent=2)
+    codici_ls = json.dumps(sorted(magistrali), indent=2)
     return (f"{intestazione}\nexport const NOMI_CORSO = {corpo};\n"
-            f"\nexport const CICLO_UNICO = new Set({codici});\n")
+            f"\nexport const CICLO_UNICO = new Set({codici});\n"
+            f"\nexport const MAGISTRALI = new Set({codici_ls});\n")
 
 
 def scrivi(testo, solo_controllo):
@@ -270,7 +310,7 @@ def main():
 
     mappa, problemi = costruisci_mappa(leggi_tsv())
     print(f"Sorgente letta: {sum(len(v) for v in mappa.values())} corsi su {len(mappa)} atenei.")
-    problemi_copertura, ciclo_unico = verifica_copertura(mappa)
+    problemi_copertura, ciclo_unico, magistrali = verifica_copertura(mappa)
     problemi += problemi_copertura
     for p in problemi:
         print(f"ATTENZIONE: {p}")
@@ -280,7 +320,7 @@ def main():
         print(f"Niente scritto: {USCITA.relative_to(RADICE)} resta com'era.")
         return 1
 
-    return 0 if scrivi(rendi(mappa, ciclo_unico), argomenti.check) else 1
+    return 0 if scrivi(rendi(mappa, ciclo_unico, magistrali), argomenti.check) else 1
 
 
 if __name__ == "__main__":

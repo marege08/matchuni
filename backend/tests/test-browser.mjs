@@ -677,12 +677,61 @@ async function main() {
         corsi.ancoraViva === 76027,
       corsi.inMemoria.join(','));
 
+    // --- 7b. Le magistrali hanno file a parte (corsi-magistrali/) ---
+    // Si scaricano solo quando servono: fin qui, con sei atenei di triennali
+    // aperti, nessun file delle magistrali deve essere arrivato.
+    const scaricateMagistrali = () => valuta(
+      `performance.getEntriesByType('resource')
+         .filter(r => r.name.includes('/corsi-magistrali/'))
+         .map(r => r.name.split('/').pop())`);
+    const magistraliPrima = await scaricateMagistrali();
+    verifica('aprire le triennali non scarica nessun file delle magistrali',
+      magistraliPrima.length === 0, magistraliPrima.join(','));
+    // Il corso interateneo 0580107307100001 (Scienze e tecnologie alimentari,
+    // LM-70) ha lo stesso codice alla Sapienza e alla Tuscia e una scheda per
+    // ateneo: «rifarebbero» 51,9 alla Sapienza e 75,0 alla Tuscia. La domanda
+    // si cerca con l'etichetta delle triennali, che prepara_db_sito.py
+    // --magistrali ha messo al posto di «...al corso di laurea magistrale?».
+    const mag = await valuta(`(async () => {
+      const m = await import('./js/db-corsi.js');
+      const db = await m.caricaAteneoCorsi('70026', 'magistrali');
+      const [righe, quanti] = db.exec(
+        'SELECT COUNT(*), COUNT(DISTINCT corso) FROM dati')[0].values[0];
+      const tipi = db.exec('SELECT DISTINCT tipo_corso FROM dati')[0].values.flat();
+      const triennali = await m.caricaAteneoCorsi('70026');
+      const rifarebbero = (d) => d.exec(
+        "SELECT valore_raw FROM dati WHERE corso = '0580107307100001' " +
+        "AND categoria = 'Si iscriverebbero di nuovo all''università? (%)' " +
+        "AND indicatore = 'Sì, allo stesso corso dell''Ateneo'")[0]?.values[0][0] ?? null;
+      const tuscia = await m.caricaAteneoCorsi('70035', 'magistrali');
+      const vecchia = db.exec("SELECT COUNT(*) FROM dati WHERE categoria LIKE '%corso di laurea magistrale%'")[0].values[0][0];
+      const rifiutata = await m.caricaAteneoCorsi('70026', 'dottorati').then(() => '', (e) => e.message);
+      return { righe, quanti, tipi, separato: db !== triennali,
+               pronta: m.ateneoCaricato('70026', 'magistrali') === db,
+               chiave: m.chiaveAteneo('70026', 'magistrali'),
+               sapienza: rifarebbero(db), tuscia: rifarebbero(tuscia), vecchia, rifiutata,
+               inMemoria: m.ateneiInMemoria() };
+    })()`);
+    verifica('le magistrali della Sapienza: 64.616 righe su 128 corsi, tutte LS, in un database separato',
+      mag.righe === 64616 && mag.quanti === 128 && JSON.stringify(mag.tipi) === '["LS"]' &&
+        mag.separato && mag.pronta && mag.chiave === 'magistrali:70026' &&
+        mag.inMemoria.includes('magistrali:70026') && mag.inMemoria.includes('70026'),
+      JSON.stringify(mag));
+    const magistraliDopo = await scaricateMagistrali();
+    verifica('le magistrali arrivano da corsi-magistrali/, un file per ateneo',
+      magistraliDopo.filter((f) => f === '70026.sqlite').length === 1 &&
+        magistraliDopo.filter((f) => f === '70035.sqlite').length === 1, magistraliDopo.join(','));
+    verifica('corso interateneo: Sapienza e Tuscia leggono ognuna la sua scheda, con l\'etichetta delle triennali',
+      mag.sapienza === '51,9' && mag.tuscia === '75,0' && mag.vecchia === 0,
+      JSON.stringify({ sapienza: mag.sapienza, tuscia: mag.tuscia, vecchia: mag.vecchia }));
+    verifica('una fonte dei corsi inventata viene rifiutata', mag.rifiutata.includes('sconosciuta'), mag.rifiutata);
+
     // --- 8. I nomi dei corsi (js/nomi-corso.js) ---
     // La copertura 1:1 contro i database la verifica il generatore
     // (tools/genera_nomi_corso.py --check); qui si controlla che il modulo
     // pubblicato si carichi nel browser e dica le cose giuste.
     const nomi = await valuta(`(async () => {
-      const { NOMI_CORSO } = await import('./js/nomi-corso.js');
+      const { NOMI_CORSO, MAGISTRALI } = await import('./js/nomi-corso.js');
       const { NOMI_ATENEO } = await import('./js/nomi-ateneo.js');
       const atenei = Object.keys(NOMI_CORSO);
       return {
@@ -690,11 +739,15 @@ async function main() {
         soloAteneiVeri: atenei.every((a) => a in NOMI_ATENEO),
         corsi: atenei.reduce((n, a) => n + Object.keys(NOMI_CORSO[a]).length, 0),
         acsai: NOMI_CORSO['70026']?.['0580106203100003'] ?? null,
+        magistrali: MAGISTRALI.size,
+        meccanica: NOMI_CORSO['70026']?.['0580107303400001'] ?? null,
       };
     })()`);
     verifica('i nomi coprono 78 atenei, tutti veri',
       nomi.atenei === 78 && nomi.soloAteneiVeri, `${nomi.atenei} atenei`);
-    verifica('i nomi coprono 3.012 corsi (2.607 triennali e 405 a ciclo unico)', nomi.corsi === 3012, `${nomi.corsi} corsi`);
+    verifica('i nomi coprono 5.461 corsi (2.607 triennali, 405 a ciclo unico, 2.449 magistrali)', nomi.corsi === 5461, `${nomi.corsi} corsi`);
+    verifica('MAGISTRALI ha 2.448 codici (l\'interateneo Sapienza-Tuscia conta una volta) e la meccanica LM-33 ha il suo nome',
+      nomi.magistrali === 2448 && nomi.meccanica === 'ingegneria meccanica (LM-33)', JSON.stringify(nomi));
     verifica('ACSAI ha il suo nome sotto Sapienza',
       String(nomi.acsai).startsWith('applied computer science and artificial intelligence'),
       String(nomi.acsai));
@@ -1502,6 +1555,197 @@ async function main() {
       !mix.avvisi.some((a) => a.startsWith('Colonne di tipo diverso.')) &&
       misti.erroriConsole.length === 0, JSON.stringify({ ...mix, errori: misti.erroriConsole }));
     misti.chiudi();
+
+    // Una MAGISTRALE (Ingegneria meccanica LM-33 alla Sapienza, 105
+    // intervistati) accanto al suo ateneo: il file arriva da corsi-magistrali/
+    // e quello delle triennali della Sapienza no; il voto sul lavoro e' il
+    // tasso di occupazione, senza «lavorano o studiano» (e qui e' «quasi tutti
+    // uguali»: nelle magistrali dell'area lavora fra l'88 e il 99%, quindi il
+    // voto non distingue, e la prova accetta l'uno o l'altro); lo stipendio ha
+    // il voto; «rifarebbero» ha il
+    // voto (la domanda ha l'etichetta delle triennali); il confronto e' coi
+    // corsi magistrali dell'area (78 sul lavoro, 112 sullo studio, in
+    // termini-paragone.js); l'avviso e la nota «magistrale» nel menu.
+    const MECCANICA_LM = 'corso:70026:0580107303400001';
+    const magistrale = await apriLink(`?c=${MECCANICA_LM}&c=ateneo:70026`);
+    await aspettaCorsi(magistrale);
+    const lm = await magistrale.valuta(`(async () => {
+      const riga = (id) => document.querySelector('#griglia-voti .voti-riga[data-indicatore="' + id + '"]');
+      const cella = (id) => riga(id).querySelectorAll('.voto')[0];
+      const file = performance.getEntriesByType('resource').map((r) => new URL(r.name).pathname)
+        .filter((p) => p.includes('/corsi'));
+      const stato = {
+        file,
+        variante: cella('occupati').querySelector('.voto-variante')?.textContent ?? null,
+        votoLavoro: cella('occupati').querySelector('[data-voto]')?.dataset.voto,
+        motivoLavoro: cella('occupati').querySelector('[data-motivo]')?.dataset.motivo ?? null,
+        votoStipendio: cella('retribuzione').querySelector('[data-voto]')?.dataset.voto,
+        votoRifarebbero: cella('rifarebbero').querySelector('[data-voto]')?.dataset.voto,
+        paragone: document.getElementById('paragone-voti').textContent,
+        avvisi: [...document.querySelectorAll('#avvisi-lista li')].map((li) => li.textContent),
+      };
+      document.querySelector('.colonna-scheda .campo-corso .tendina-bottone').click();
+      await new Promise((r) => setTimeout(r, 300));
+      const nota = (testo) => {
+        const li = [...document.querySelectorAll('[role="option"]')]
+          .find((o) => o.querySelector('.tendina-testo')?.textContent === testo);
+        return li ? (li.querySelector('small')?.textContent ?? '') : null;
+      };
+      stato.notaMagistrale = nota('ingegneria meccanica (LM-33)');
+      stato.notaTriennale = nota('ingegneria meccanica (L-9)');
+      return stato;
+    })()`);
+    verifica('una magistrale scarica solo il suo file da corsi-magistrali/',
+      lm.file.some((f) => f.endsWith('/corsi-magistrali/70026.sqlite')) &&
+        !lm.file.some((f) => f.endsWith('/corsi/70026.sqlite')), JSON.stringify(lm.file));
+    verifica('una magistrale: lavoro senza «lavorano o studiano», voto su stipendio e «rifarebbero», confrontata con le magistrali',
+      lm.variante === null && (lm.votoLavoro !== undefined || lm.motivoLavoro === 'tutti-uguali') &&
+        lm.votoStipendio !== undefined && lm.votoRifarebbero !== undefined &&
+        lm.paragone.includes('I corsi sono messi a confronto con i corsi magistrali di') &&
+        lm.paragone.includes('78 sulle domande di lavoro, 112 su quelle di studio') &&
+        magistrale.erroriConsole.length === 0, JSON.stringify({ ...lm, errori: magistrale.erroriConsole }));
+    verifica('l\'avviso dice che il corso magistrale conta solo i suoi laureati',
+      lm.avvisi.some((a) => a.startsWith('Colonne di tipo diverso. I corsi magistrali contano solo i loro laureati')),
+      JSON.stringify(lm.avvisi));
+    verifica('nel menu dei corsi la LM-33 ha la nota «magistrale», la L-9 no',
+      lm.notaMagistrale === 'magistrale' && lm.notaTriennale === '',
+      JSON.stringify({ magistrale: lm.notaMagistrale, triennale: lm.notaTriennale }));
+    magistrale.chiudi();
+
+    // Triennale e magistrale della stessa area insieme: ognuna coi termini
+    // del suo tipo, «lavorano o studiano» solo sulla triennale, l'avviso.
+    const dueLivelli = await apriLink(`?c=${MECCANICA_LM}&c=corso:70026:0580106200900012`);
+    await aspettaCorsi(dueLivelli);
+    const due = await dueLivelli.valuta(`(() => {
+      const celle = [...document.querySelectorAll('#griglia-voti .voti-riga[data-indicatore="occupati"] .voto')];
+      return {
+        varianti: celle.map((c) => c.querySelector('.voto-variante')?.textContent ?? null),
+        paragone: document.getElementById('paragone-voti').textContent,
+        avvisi: [...document.querySelectorAll('#avvisi-lista li')].map((li) => li.textContent),
+      };
+    })()`);
+    verifica('triennale e magistrale insieme: ciascuna coi suoi termini e l\'avviso «Triennali e magistrali insieme»',
+      due.varianti.length === 2 && due.varianti[0] === null && due.varianti[1] === 'per un corso: lavorano o studiano ancora' &&
+        due.paragone.includes('I corsi triennali sono messi a confronto con i corsi triennali di') &&
+        due.paragone.includes('I corsi magistrali sono messi a confronto con i corsi magistrali di') &&
+        due.avvisi.some((a) => a === 'Triennali e magistrali insieme. Sul lavoro non sono gruppi uguali: dopo la ' +
+          'triennale molti stanno ancora studiando, dopo la magistrale gli studi sono finiti.') &&
+        dueLivelli.erroriConsole.length === 0, JSON.stringify({ ...due, errori: dueLivelli.erroriConsole }));
+    dueLivelli.chiudi();
+
+    // Magistrale e ciclo unico, e poi tutti e tre i tipi insieme (Bologna:
+    // Medicina a ciclo unico, Informatica LM-18, Infermieristica triennale):
+    // l'avviso nomina i tipi presenti sempre nello stesso ordine.
+    const tipiInsieme = async (query) => {
+      const pagina = await apriLink(query);
+      await aspettaCorsi(pagina);
+      const avvisi = await pagina.valuta(`[...document.querySelectorAll('#avvisi-lista li')].map((li) => li.textContent)`);
+      const errori = pagina.erroriConsole;
+      pagina.chiudi();
+      return { avvisi, errori };
+    };
+    const INFORMATICA_BO = 'corso:70003:0370107301900002';
+    const lmCu = await tipiInsieme(`?c=${INFORMATICA_BO}&c=${MEDICINA_BO}`);
+    verifica('magistrale e ciclo unico insieme: «Magistrali e ciclo unico insieme», lauree diverse',
+      lmCu.avvisi.includes('Magistrali e ciclo unico insieme. Sono lauree diverse: ogni corso è messo ' +
+        'a confronto solo con i corsi del suo tipo.') && lmCu.errori.length === 0, JSON.stringify(lmCu));
+    const treTipi = await tipiInsieme(`?c=${MEDICINA_BO}&c=corso:70003:0370106204600003&c=${INFORMATICA_BO}`);
+    verifica('tre tipi insieme: «Triennali, magistrali e ciclo unico insieme», nell\'ordine giusto',
+      treTipi.avvisi.includes('Triennali, magistrali e ciclo unico insieme. Sul lavoro non sono gruppi ' +
+        'uguali: dopo la triennale molti stanno ancora studiando, dopo la magistrale e il ciclo unico ' +
+        'gli studi sono finiti.') && treTipi.errori.length === 0, JSON.stringify(treTipi));
+
+    // Una voce che solo le magistrali hanno, dentro una domanda che anche gli
+    // atenei pubblicano (indicatoriSoloCorso in config-filtri.js): nella
+    // colonna dell'ateneo dice «solo per i corsi», non «—»; senza colonne
+    // corso la riga non c'e', e la domanda si'.
+    const ID_TIROCINI = 'sono_soddisfatti_dell_esperienza_di_studio_all_estero_per_100_che_hanno_svolto_e';
+    const VOCE_TIROCINI = 'Hanno svolto tirocini formativi curriculari o lavoro riconosciuti solo nel precedente corso di studio';
+    const leggiTirocini = (pagina) => pagina.valuta(`(() => {
+      const chk = document.getElementById('chk-${ID_TIROCINI}');
+      if (!chk.checked) chk.click();
+      const righe = [...document.querySelectorAll('#tabella-body tr')];
+      const riga = righe.find((tr) => tr.cells[0]?.textContent.trim() === ${JSON.stringify(VOCE_TIROCINI)});
+      return {
+        celle: riga ? [...riga.cells].slice(1).map((td) => td.textContent.trim()) : null,
+        domanda: righe.some((tr) => tr.cells[0]?.textContent.trim() === 'Hanno svolto tirocini formativi curriculari o lavoro riconosciuti dal corso di studio (%)'),
+      };
+    })()`);
+    const conLm = await apriLink(`?c=${MECCANICA_LM}&c=ateneo:70026`);
+    await aspettaCorsi(conLm);
+    const tirociniLm = await leggiTirocini(conLm);
+    conLm.chiudi();
+    verifica('voce solo delle magistrali: valore nella magistrale, «solo per i corsi» nell\'ateneo',
+      tirociniLm.celle?.length === 2 && /^[0-9]/.test(tirociniLm.celle[0]) &&
+        tirociniLm.celle[1] === 'solo per i corsi' && tirociniLm.domanda, JSON.stringify(tirociniLm));
+    const soloAteneo = await apriLink('?c=ateneo:70026');
+    await attendi(800);
+    const tirociniAteneo = await leggiTirocini(soloAteneo);
+    soloAteneo.chiudi();
+    verifica('senza colonne corso la voce solo-corso sparisce, la domanda resta',
+      tirociniAteneo.celle === null && tirociniAteneo.domanda, JSON.stringify(tirociniAteneo));
+
+    // La gara fra le due fonti dello stesso ateneo: scelgo una triennale della
+    // Sapienza (il suo file resta appeso), passo alla magistrale LM-33 (il suo
+    // file arriva), poi il file delle triennali fallisce. L'errore non deve
+    // finire sulla magistrale, che ha i suoi dati. Si parte dalla Tuscia, cosi'
+    // nessun file della Sapienza e' gia' aperto in questa pagina.
+    const gara = await apriLink('?c=ateneo:70035');
+    await attendi(800);
+    await gara.valuta(`(() => {
+      const vero = window.fetch;
+      let sblocca;
+      const appeso = new Promise((ok) => { sblocca = ok; });
+      window.__sblocca = sblocca;
+      window.fetch = (url, ...resto) => String(url).endsWith('corsi/70026.sqlite') && !String(url).includes('magistrali')
+        ? appeso.then(() => new Response('', { status: 404 }))
+        : vero(url, ...resto);
+      const imposta = (classe, valore) => {
+        const s = document.querySelector('.colonna-scheda .' + classe);
+        s.value = valore; s.dispatchEvent(new Event('change'));
+      };
+      imposta('sel-tipo', 'corso');
+      imposta('sel-codice', '70026');
+      imposta('sel-corso', '0580106203100003');
+      imposta('sel-corso', '0580107303400001');
+      return true;
+    })()`);
+    await aspettaInPagina(gara.valuta,
+      `document.querySelectorAll('#tabella-head th')[1].textContent.includes('meccanica') &&
+       !document.querySelector('#griglia-voti [data-motivo="caricamento"]')`, 'magistrale caricata nella gara');
+    await gara.valuta(`(() => { window.__sblocca(); return true; })()`);
+    await attendi(800);
+    const esitoGara = await gara.valuta(`(() => {
+      const c = document.querySelector('#accordion-filtri input[type=checkbox]');
+      c.click(); c.click();
+      const cella = document.querySelector('#griglia-voti .voti-riga[data-indicatore="retribuzione"] .voto');
+      return { testa: document.querySelectorAll('#tabella-head th')[1].textContent,
+               voto: cella?.querySelector('[data-voto]')?.dataset.voto ?? null,
+               motivo: cella?.querySelector('[data-motivo]')?.dataset.motivo ?? null };
+    })()`);
+    gara.chiudi();
+    verifica('un download fallito delle triennali non mette l\'errore sulla magistrale dello stesso ateneo',
+      !esitoGara.testa.includes('Impossibile') && esitoGara.voto !== null, JSON.stringify(esitoGara));
+
+    // Sfratto dalla memoria con una magistrale a schermo: si aprono altri
+    // cinque atenei e si ridisegna; la magistrale in uso resta aperta e la
+    // colonna non torna in «caricamento».
+    const sfrattoLm = await apriLink(`?c=${MECCANICA_LM}&c=ateneo:70026`);
+    await aspettaCorsi(sfrattoLm);
+    const esitoSfratto = await sfrattoLm.valuta(`(async () => {
+      const m = await import('./js/db-corsi.js');
+      for (const c of ['70097', '70099', '70110', '70137', '70153']) await m.caricaAteneoCorsi(c);
+      const ch = document.querySelector('#accordion-filtri input[type=checkbox]');
+      ch.click(); ch.click();
+      await new Promise((r) => setTimeout(r, 500));
+      return { inMemoria: m.ateneiInMemoria(),
+               caricamento: !!document.querySelector('#griglia-voti [data-motivo="caricamento"]') };
+    })()`);
+    sfrattoLm.chiudi();
+    verifica('liberando la memoria la magistrale a schermo resta aperta',
+      esitoSfratto.inMemoria.includes('magistrali:70026') && esitoSfratto.inMemoria.length === 4 &&
+        !esitoSfratto.caricamento, JSON.stringify(esitoSfratto));
+
     await caricaSuTelefono(POCHI);
     await aspettaCorsi(telefono);
     const tel = await leggiPochi(telefono);

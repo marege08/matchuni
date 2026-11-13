@@ -12,12 +12,13 @@ import { processData } from './processData.js';
 import { NOMI_ATENEO } from './nomi-ateneo.js';
 import { NOMI_GRUPPO } from './nomi-gruppo.js';
 import { chiediConfronto } from './ai/connettore.js';
-import { NOMI_CORSO, CICLO_UNICO } from './nomi-corso.js';
+import { NOMI_CORSO, CICLO_UNICO, MAGISTRALI } from './nomi-corso.js';
 import { SIGLE_ATENEO, SIGLE_GRUPPO } from './sigle.js';
 import {
   inizializzaSql,
   caricaAteneoCorsi,
   ateneoCaricato,
+  chiaveAteneo,
   interrogaCorso,
   descriviCorso,
   liberaAteneiNonUsati,
@@ -99,13 +100,29 @@ function voceDisponibile(voce) {
   );
 }
 
-// Course-only questions (`soloCorso`, see config-filtri.js) ask first-level
-// graduates what they did after the degree; universities and groups mix all
-// degree types and have no answer. They join the comparison only when at least
-// one course column is present, instead of adding rows every column leaves
-// empty.
+// Course-only questions (`soloCorso`, see config-filtri.js) are asked of one
+// degree type only: first-level graduates about what they did after the
+// degree, second-level graduates about their previous degree. Universities
+// and groups mix all degree types and have no answer. They join the comparison
+// only when at least one course column is present, instead of adding rows
+// every column leaves empty.
 function voceNelConfronto(voce) {
   return !voce.soloCorso || colonne.some((c) => c.tipo === 'corso');
+}
+
+/**
+ * Whether a column has no answer to one option because only courses publish
+ * it: the whole question is course-only, or just that option is
+ * (`indicatoriSoloCorso`, inside a question the aggregates also publish).
+ *
+ * @param {object} voce - Entry of CONFIG_FILTRI.
+ * @param {string} indicatore - Option of the question.
+ * @param {{tipo:string}} colonna - Comparison column.
+ * @returns {boolean} True when the cell must say "solo per i corsi".
+ */
+function soloPerICorsi(voce, indicatore, colonna) {
+  return colonna.tipo !== 'corso' &&
+    (voce.soloCorso || (voce.indicatoriSoloCorso?.includes(indicatore) ?? false));
 }
 
 // Map entry IDs to { voce, macro } for quick CONFIG_FILTRI lookup from a
@@ -310,18 +327,34 @@ function etichettaColonna(colonna) {
 
 /**
  * Returns the degree type of a course column. Single-cycle courses are listed
- * in CICLO_UNICO; every other course is a first-level degree. The list ships
- * with the page, so the type is known before the university database loads.
+ * in CICLO_UNICO, second-level ones in MAGISTRALI; every other course is a
+ * first-level degree. The lists ship with the page, so the type is known
+ * before the university database loads.
  *
  * @param {{codice:string}} colonna - Course column.
- * @returns {'triennale'|'ciclo-unico'} Degree type.
+ * @returns {'triennale'|'ciclo-unico'|'magistrale'} Degree type.
  */
 function tipoDiLaurea(colonna) {
+  if (MAGISTRALI.has(colonna.codice)) return 'magistrale';
   return CICLO_UNICO.has(colonna.codice) ? 'ciclo-unico' : 'triennale';
 }
 
+/**
+ * Returns the source of a course column's database (js/db-corsi.js):
+ * second-level courses have their own files, downloaded only when chosen.
+ *
+ * @param {{codice:string}} colonna - Course column.
+ * @returns {'corsi'|'magistrali'} Source.
+ */
+function fonteCorso(colonna) {
+  return tipoDiLaurea(colonna) === 'magistrale' ? 'magistrali' : 'corsi';
+}
+
 /** How a sentence names the courses of a degree type. */
-const NOMI_LAUREA = { triennale: 'triennali', 'ciclo-unico': 'a ciclo unico' };
+const NOMI_LAUREA = { triennale: 'triennali', 'ciclo-unico': 'a ciclo unico', magistrale: 'magistrali' };
+
+/** The note a course menu shows next to a course name, by degree type. */
+const NOTA_LAUREA = { 'ciclo-unico': 'ciclo unico', magistrale: 'magistrale' };
 
 /**
  * Counts a column the user picked as an anonymous GoatCounter event, so the
@@ -378,14 +411,17 @@ function opzioniEntita() {
  */
 async function preparaColonnaCorso(stato) {
   const ateneo = stato.ateneo;
-  if (ateneoCaricato(ateneo)) return;
+  const fonte = fonteCorso(stato);
+  if (ateneoCaricato(ateneo, fonte)) return;
   // The error is cleared by every new user selection (mostra), never here: a
   // late successful download of a university the user has already left must
-  // not erase the error of the university now selected.
+  // not erase the error of the university now selected. The same holds for
+  // the other source of the same university (a first-level course left for a
+  // master's one, or the reverse).
   try {
-    await caricaAteneoCorsi(ateneo);
+    await caricaAteneoCorsi(ateneo, fonte);
   } catch (errore) {
-    if (stato.ateneo === ateneo) stato.errore = errore.message;
+    if (stato.ateneo === ateneo && fonteCorso(stato) === fonte) stato.errore = errore.message;
   }
   // The user may have removed the column or picked another university while
   // the download was running; only a still-current selection is redrawn.
@@ -572,8 +608,10 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
     segnaposto: 'Cerca un corso…',
     opzioni: () => [
       { valore: '', testo: 'Tutto l\'ateneo', nota: 'tutti i corsi e tutti i tipi di laurea' },
-      ...Object.entries(NOMI_CORSO[ateneoDellaColonna()] ?? {}).map(([c, nome]) =>
-        (CICLO_UNICO.has(c) ? { valore: c, testo: nome, nota: 'ciclo unico' } : { valore: c, testo: nome })),
+      ...Object.entries(NOMI_CORSO[ateneoDellaColonna()] ?? {}).map(([c, nome]) => {
+        const nota = NOTA_LAUREA[tipoDiLaurea({ codice: c })];
+        return nota ? { valore: c, testo: nome, nota } : { valore: c, testo: nome };
+      }),
     ],
     valore: () => (stato.tipo === 'corso' ? stato.codice : ''),
     testo: () => (stato.tipo === 'corso' ? etichettaColonna(stato) : 'Tutto l\'ateneo'),
@@ -1003,7 +1041,7 @@ function costruisciScheda(righe) {
  */
 function interrogaScheda(colonna) {
   if (colonna.tipo === 'corso') {
-    const dbAteneo = ateneoCaricato(colonna.ateneo);
+    const dbAteneo = ateneoCaricato(colonna.ateneo, fonteCorso(colonna));
     if (!dbAteneo) return { ...costruisciScheda([]), inCaricamento: true };
     return costruisciScheda(interrogaCorso(dbAteneo, colonna.codice, definizioneScelta));
   }
@@ -1226,8 +1264,9 @@ const TESTO_SOLO_CORSO = 'solo per i corsi';
 function creaCellaSoloCorso() {
   const td = creaCellaTesto(TESTO_SOLO_CORSO, 'cella-solo-corso');
   td.title =
-    'Domanda posta solo ai laureati di primo livello: AlmaLaurea la pubblica per ' +
-    'il singolo corso, non per atenei e gruppi, che mettono insieme tutti i tipi di laurea.';
+    'Domanda posta solo ai laureati di un tipo di laurea (ai triennali su cosa fanno ' +
+    'dopo, ai magistrali sulla laurea precedente): AlmaLaurea la pubblica per il singolo ' +
+    'corso, non per atenei e gruppi, che mettono insieme tutti i tipi di laurea.';
   return td;
 }
 
@@ -1274,8 +1313,8 @@ const AMBITO_INDAGINE = { profilo: 'sul questionario', occupazione: 'sul lavoro'
  * Writes the warnings about the comparison as a whole, or hides the box.
  *
  * Three cases: course columns (graduates of one degree type) next to
- * university or group columns (all degree types together), first-level and
- * single-cycle courses compared together, and columns whose sample in one
+ * university or group columns (all degree types together), courses of
+ * different degree types compared together, and columns whose sample in one
  * survey is below SOGLIA_CAMPIONE_PICCOLO. Names are inserted as text, never
  * as HTML: course names come from an external source.
  *
@@ -1290,7 +1329,9 @@ function aggiornaAvvisi(datiPerColonna) {
       ? ' Ogni corso conta solo i laureati del suo tipo di laurea'
       : lauree.has('ciclo-unico')
         ? ' I corsi a ciclo unico contano solo i loro laureati'
-        : ' I corsi contano solo laureati di primo livello';
+        : lauree.has('magistrale')
+          ? ' I corsi magistrali contano solo i loro laureati'
+          : ' I corsi contano solo laureati di primo livello';
     avvisi.push([
       el('strong', {}, 'Colonne di tipo diverso.'),
       `${chi}; atenei e gruppi mettono insieme triennali, magistrali e ciclo unico. ` +
@@ -1300,10 +1341,19 @@ function aggiornaAvvisi(datiPerColonna) {
     ]);
   }
   if (lauree.size > 1) {
+    // Always in the same order, whatever the order of the columns.
+    const presenti = ['triennale', 'magistrale', 'ciclo-unico'].filter((l) => lauree.has(l));
+    const nomi = { triennale: 'triennali', magistrale: 'magistrali', 'ciclo-unico': 'ciclo unico' };
+    const elenco = presenti.map((l) => nomi[l]);
+    const titolo = `${elenco.slice(0, -1).join(', ')} e ${elenco.at(-1)} insieme.`;
+    const finiti = presenti.filter((l) => l !== 'triennale')
+      .map((l) => (l === 'magistrale' ? 'la magistrale' : 'il ciclo unico')).join(' e ');
     avvisi.push([
-      el('strong', {}, 'Triennali e ciclo unico insieme.'),
-      ' Sul lavoro non sono gruppi uguali: dopo la triennale molti stanno ancora ' +
-      'studiando, dopo il ciclo unico gli studi sono finiti.',
+      el('strong', {}, titolo.charAt(0).toUpperCase() + titolo.slice(1)),
+      lauree.has('triennale')
+        ? ' Sul lavoro non sono gruppi uguali: dopo la triennale molti stanno ancora ' +
+          `studiando, dopo ${finiti} gli studi sono finiti.`
+        : ' Sono lauree diverse: ogni corso è messo a confronto solo con i corsi del suo tipo.',
     ]);
   }
   for (const { colonna, numerosita, inCaricamento } of datiPerColonna) {
@@ -1365,7 +1415,8 @@ function renderTabella() {
 
   // Release course databases no column shows any more. Universities in use
   // are never closed, so this is safe before the queries below.
-  liberaAteneiNonUsati(colonne.filter((c) => c.tipo === 'corso').map((c) => c.ateneo));
+  liberaAteneiNonUsati(colonne.filter((c) => c.tipo === 'corso')
+    .map((c) => chiaveAteneo(c.ateneo, fonteCorso(c))));
   // Every change of columns ends up here, so the address follows them.
   scriviIndirizzo();
 
@@ -1467,7 +1518,7 @@ function renderTabella() {
         const celle = [];
         const celleModello = [];
         for (const { colonna, mappa, numerosita } of datiPerColonna) {
-          if (voce.soloCorso && colonna.tipo !== 'corso') {
+          if (soloPerICorsi(voce, voce.indicatori[0], colonna)) {
             tr.appendChild(creaCellaSoloCorso());
             celleModello.push({ valore: null, testo: TESTO_SOLO_CORSO, piccolo: false });
             continue;
@@ -1498,7 +1549,11 @@ function renderTabella() {
         }
         elTabellaBody.appendChild(trTitolo);
 
+        const conCorsi = colonne.some((c) => c.tipo === 'corso');
         for (const indicatore of voce.indicatori) {
+          // An option only courses publish is left out while no course column
+          // is in the comparison, as course-only questions are.
+          if (!conCorsi && voce.indicatoriSoloCorso?.includes(indicatore)) continue;
           const tr = document.createElement('tr');
           tr.className = 'riga-indicatore';
           tr.appendChild(creaCellaTesto(indicatore, 'colonna-domanda'));
@@ -1506,7 +1561,7 @@ function renderTabella() {
           const celle = [];
           const celleModello = [];
           for (const { colonna, mappa, numerosita } of datiPerColonna) {
-            if (voce.soloCorso && colonna.tipo !== 'corso') {
+            if (soloPerICorsi(voce, indicatore, colonna)) {
               tr.appendChild(creaCellaSoloCorso());
               celleModello.push({ valore: null, testo: TESTO_SOLO_CORSO, piccolo: false });
               continue;
@@ -1706,8 +1761,8 @@ function renderSintesi(datiPerColonna) {
 
 // --- 5c. The Base view: a 0-10 score per key question (js/voto.js) ---
 // Each column is ranked among sheets of its own kind: a university among the
-// universities, a group among the groups, a first-level course among the
-// first-level courses of the groups in the comparison (js/termini-paragone.js,
+// universities, a group among the groups, a course among the courses of its
+// own degree type in the groups of the comparison (js/termini-paragone.js,
 // since the browser holds only the universities it has downloaded).
 
 const elGrigliaVoti = document.getElementById('griglia-voti');
@@ -1774,11 +1829,15 @@ function terminiAggregati(tipo, ind) {
  * @param {string} id - Indicator id, or 'lavora-studia'.
  * @param {string} indagine - Survey of the indicator.
  * @param {string[]} gruppi - Group codes.
- * @param {'triennale'|'ciclo-unico'} [laurea] - Degree type of the courses.
+ * @param {'triennale'|'ciclo-unico'|'magistrale'} [laurea] - Degree type of the courses.
  * @returns {number[]} Values.
  */
 function terminiCorsi(id, indagine, gruppi, laurea = 'triennale') {
-  const fonte = laurea === 'ciclo-unico' ? TERMINI_PARAGONE.valoriCicloUnico : TERMINI_PARAGONE.valori;
+  const fonte = {
+    triennale: TERMINI_PARAGONE.valori,
+    'ciclo-unico': TERMINI_PARAGONE.valoriCicloUnico,
+    magistrale: TERMINI_PARAGONE.valoriMagistrali,
+  }[laurea];
   const perGruppo = indagine === 'profilo'
     ? fonte.profilo[id]
     : fonte.occupazione[definizioneScelta]?.[id];
@@ -1825,7 +1884,7 @@ const gruppoDelCorso = new Map();
 function gruppoColonnaCorso(colonna) {
   const k = `${colonna.ateneo}/${colonna.codice}`;
   if (!gruppoDelCorso.has(k)) {
-    const dbAteneo = ateneoCaricato(colonna.ateneo);
+    const dbAteneo = ateneoCaricato(colonna.ateneo, fonteCorso(colonna));
     if (!dbAteneo) return null;
     gruppoDelCorso.set(k, descriviCorso(dbAteneo, colonna.codice)?.gruppo ?? null);
   }
@@ -1891,7 +1950,8 @@ function creaCellaVoto(ind, dati, gruppiPerLaurea, etichettaTriennali) {
   if (inCaricamento) return senzaVoto('caricamento', 'Caricamento…', 'scarico i corsi dell\'ateneo');
 
   // Only first-level graduates get "works or still studies": single-cycle
-  // graduates have finished studying, so their employment rate is plain.
+  // and second-level graduates have finished studying, so their employment
+  // rate is plain.
   const lavoroDelCorso = laurea === 'triennale' && ind.id === RIGA_LAVORO;
   const idTermini = lavoroDelCorso ? 'lavora-studia' : ind.id;
   let valore;
@@ -1996,7 +2056,7 @@ function renderVoti(datiPerColonna) {
   }
   // A course is ranked only against courses of its own degree type, so the
   // groups of the course columns are collected by type.
-  const gruppiPerLaurea = { triennale: [], 'ciclo-unico': [] };
+  const gruppiPerLaurea = { triennale: [], 'ciclo-unico': [], magistrale: [] };
   for (const { colonna } of datiPerColonna) {
     if (colonna.tipo !== 'corso') continue;
     const gruppo = gruppoColonnaCorso(colonna);

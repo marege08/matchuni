@@ -2,6 +2,10 @@
 //
 // Data layer for course-level data: one sql.js database per university,
 // downloaded from corsi/<code>.sqlite only when something asks for it.
+// Second-level (master's) degrees live in a separate source,
+// corsi-magistrali/<code>.sqlite, downloaded only when a master's course is
+// chosen: in the same file they would double the download for everyone who
+// looks at first-level courses.
 //
 // This module deliberately touches no DOM. The interface will be redesigned,
 // and keeping loading separate from rendering means the redesign can replace
@@ -47,11 +51,29 @@ export function inizializzaSql() {
 // nor the AI layer can make the page fetch an arbitrary file.
 const CODICI_VALIDI = new Set(Object.keys(NOMI_ATENEO));
 
-// code -> Promise<Database>. Map iteration follows insertion order, and every
+// Source -> folder of its per-university files. 'corsi' holds first-level
+// and single-cycle courses, 'magistrali' the second-level ones.
+const CARTELLE = { corsi: 'corsi', magistrali: 'corsi-magistrali' };
+
+/**
+ * Returns the cache key of one university's database in one source.
+ *
+ * A 'corsi' key is the bare university code, as it was before the second
+ * source existed; a 'magistrali' key is prefixed, so the two never collide.
+ *
+ * @param {string} codice - University code.
+ * @param {string} [fonte] - 'corsi' (default) or 'magistrali'.
+ * @returns {string} Cache key.
+ */
+export function chiaveAteneo(codice, fonte = 'corsi') {
+  return fonte === 'corsi' ? codice : `${fonte}:${codice}`;
+}
+
+// key -> Promise<Database>. Map iteration follows insertion order, and every
 // access re-inserts the entry, so the first entries are the least recently used.
 const cache = new Map();
 
-// code -> Database, only for downloads that have finished and are still
+// key -> Database, only for downloads that have finished and are still
 // cached. The comparison table renders synchronously, so it needs to know
 // without awaiting whether a university is ready.
 const aperti = new Map();
@@ -60,11 +82,12 @@ const aperti = new Map();
  * Downloads and opens one university's course database.
  *
  * @param {string} codice - University code.
+ * @param {string} fonte - Source, a key of CARTELLE.
  * @returns {Promise<object>} Open sql.js database.
  */
-async function scaricaAteneo(codice) {
+async function scaricaAteneo(codice, fonte) {
   const SQL = await inizializzaSql();
-  const risposta = await fetch(`corsi/${codice}.sqlite`);
+  const risposta = await fetch(`${CARTELLE[fonte]}/${codice}.sqlite`);
   if (!risposta.ok) {
     throw new Error(`Impossibile scaricare i corsi di ${NOMI_ATENEO[codice]} (HTTP ${risposta.status}).`);
   }
@@ -84,33 +107,39 @@ async function scaricaAteneo(codice) {
 /**
  * Returns the course database of one university, downloading it on first use.
  *
- * Repeated or concurrent calls for the same code share one download. A failed
- * download is removed from the cache so the next call retries it.
+ * Repeated or concurrent calls for the same code and source share one
+ * download. A failed download is removed from the cache so the next call
+ * retries it.
  *
  * @param {string} codice - University code, e.g. '70026'.
- * @returns {Promise<object>} Open sql.js database containing only that university's courses.
+ * @param {string} [fonte] - 'corsi' (default) or 'magistrali'.
+ * @returns {Promise<object>} Open sql.js database containing only that university's courses of that source.
  */
-export function caricaAteneoCorsi(codice) {
+export function caricaAteneoCorsi(codice, fonte = 'corsi') {
   if (!CODICI_VALIDI.has(codice)) {
     return Promise.reject(new Error(`Codice ateneo sconosciuto: ${codice}`));
   }
-  let promessa = cache.get(codice);
+  if (!Object.hasOwn(CARTELLE, fonte)) {
+    return Promise.reject(new Error(`Fonte dei corsi sconosciuta: ${fonte}`));
+  }
+  const chiave = chiaveAteneo(codice, fonte);
+  let promessa = cache.get(chiave);
   if (promessa) {
-    cache.delete(codice);
+    cache.delete(chiave);
   } else {
-    promessa = scaricaAteneo(codice);
+    promessa = scaricaAteneo(codice, fonte);
     promessa.then(
       (db) => {
         // An entry evicted while downloading is closed by the eviction and
         // must not reappear as ready.
-        if (cache.get(codice) === promessa) aperti.set(codice, db);
+        if (cache.get(chiave) === promessa) aperti.set(chiave, db);
       },
       () => {
-        if (cache.get(codice) === promessa) cache.delete(codice);
+        if (cache.get(chiave) === promessa) cache.delete(chiave);
       }
     );
   }
-  cache.set(codice, promessa);
+  cache.set(chiave, promessa);
   return promessa;
 }
 
@@ -124,15 +153,15 @@ export function caricaAteneoCorsi(codice) {
  * once. A download still in progress is not evicted either: dropping it would
  * waste the transfer and force a new one if the user returns to it.
  *
- * @param {Iterable<string>} codiciInUso - University codes currently displayed.
+ * @param {Iterable<string>} chiaviInUso - Keys (chiaveAteneo) of the databases currently displayed.
  */
-export function liberaAteneiNonUsati(codiciInUso) {
-  const inUso = new Set(codiciInUso);
-  for (const [codice, promessa] of cache) {
+export function liberaAteneiNonUsati(chiaviInUso) {
+  const inUso = new Set(chiaviInUso);
+  for (const [chiave, promessa] of cache) {
     if (cache.size <= MAX_ATENEI_APERTI) break;
-    if (inUso.has(codice) || !aperti.has(codice)) continue;
-    cache.delete(codice);
-    aperti.delete(codice);
+    if (inUso.has(chiave) || !aperti.has(chiave)) continue;
+    cache.delete(chiave);
+    aperti.delete(chiave);
     promessa.then((db) => db.close(), () => {});
   }
 }
@@ -141,10 +170,11 @@ export function liberaAteneiNonUsati(codiciInUso) {
  * Returns a university's course database if it has finished downloading.
  *
  * @param {string} codice - University code.
+ * @param {string} [fonte] - 'corsi' (default) or 'magistrali'.
  * @returns {object|null} Open sql.js database, or null while not yet available.
  */
-export function ateneoCaricato(codice) {
-  return aperti.get(codice) ?? null;
+export function ateneoCaricato(codice, fonte = 'corsi') {
+  return aperti.get(chiaveAteneo(codice, fonte)) ?? null;
 }
 
 /**
@@ -200,7 +230,7 @@ export function descriviCorso(db, corso) {
   }
 }
 
-/** @returns {string[]} Codes of the cached universities, least recently used first. */
+/** @returns {string[]} Keys (chiaveAteneo) of the cached databases, least recently used first. */
 export function ateneiInMemoria() {
   return [...cache.keys()];
 }

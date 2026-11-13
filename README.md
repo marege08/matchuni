@@ -3,7 +3,7 @@
 Web app gratuita per orientarsi nella scelta del corso di laurea in Italia.
 Confronta i dati ufficiali di [AlmaLaurea](https://www.almalaurea.it/) — le
 indagini *Profilo dei laureati* e *Condizione occupazionale* — fra **atenei**,
-**gruppi disciplinari** e **corsi di laurea** (2.607 corsi triennali di 78 atenei).
+**gruppi disciplinari** e **corsi di laurea** (5.461 corsi di 78 atenei: triennali, magistrali e a ciclo unico).
 
 **Sito pubblico:** <https://matchuni.it/>
 
@@ -24,7 +24,7 @@ fonte dei dati.
   sotto i 40 rispondenti, pochi termini di paragone, valori quasi tutti uguali.
 - **Vista Completa**: i valori pubblicati, con la sintesi delle sei domande sopra
   la tabella e il nome esatto della domanda AlmaLaurea sotto ogni titolo. Scegli
-  quali delle 109 domande vedere, in sei gruppi (Successo e Percorso, Esperienza
+  quali delle 115 domande vedere, in sei gruppi (Successo e Percorso, Esperienza
   Universitaria, Lavoro e Futuro, Dopo la Laurea, Competenze e Ambiente, Profilo
   Studente). **Dopo la Laurea** è l'indagine sull'occupazione a 1/3/5 anni:
   tasso di occupazione, retribuzione, tipo di contratto, dove si finisce a
@@ -72,9 +72,29 @@ menu a tendina del sito AlmaLaurea          schede statistiche pubbliche
 I **corsi** seguono una catena loro: `tools/raccogli_corsi.py` scarica le
 schede un ateneo per volta, in modo ripartibile (sono ore di download),
 `tools/prepara_db_sito.py` ne fa la versione da servire in
-`frontend/public/corsi/<ateneo>.sqlite` (78 file), `tools/genera_nomi_corso.py`
-scrive `js/nomi-corso.js` e `tools/genera_termini_paragone.py` scrive
-`js/termini-paragone.js`, i valori contro cui si calcola il voto di un corso.
+`frontend/public/corsi/<ateneo>.sqlite` (78 file, triennali e ciclo unico),
+`tools/genera_nomi_corso.py` scrive `js/nomi-corso.js` e
+`tools/genera_termini_paragone.py` scrive `js/termini-paragone.js`, i valori
+contro cui si calcola il voto di un corso.
+
+Le **magistrali** biennali stanno in file a parte,
+`frontend/public/corsi-magistrali/<ateneo>.sqlite`, che il browser scarica solo
+quando si sceglie una magistrale. Le prepara `tools/prepara_db_sito.py
+--magistrali`, che dà a 15 voci con lo stesso significato l'etichetta delle
+triennali e degli aggregati (la tabella `ETICHETTE_MAGISTRALI`, mai un numero),
+così una magistrale sta sulla stessa riga del suo ateneo e ha il voto.
+Dopo una raccolta nuova, nell'ordine:
+
+```bash
+python3 tools/prepara_db_sito.py --da ~/Documents/AlmaLaurea-raccolta-corsi \
+    --da ~/Documents/AlmaLaurea-raccolta-ciclo-unico --out frontend/public/corsi
+python3 tools/prepara_db_sito.py --magistrali \
+    --da ~/Documents/AlmaLaurea-raccolta-magistrali --out frontend/public/corsi-magistrali
+python3 tools/genera_nomi_corso.py --da ~/Documents/AlmaLaurea-raccolta-corsi \
+    --da ~/Documents/AlmaLaurea-raccolta-ciclo-unico --da ~/Documents/AlmaLaurea-raccolta-magistrali
+python3 tools/genera_termini_paragone.py
+python3 tools/genera_config_filtri.py      # le domande che esistono solo nei corsi
+```
 
 **Niente bundler, niente framework.** Sono moduli ES nativi serviti come file:
 si apre il sorgente e si legge quello che gira. `sql.js` arriva da CDN a
@@ -91,13 +111,14 @@ backend/
   tests/                       test del validatore AI, del voto, prova di sql.js, test nel browser
 frontend/public/               TUTTO ciò che viene pubblicato
   almalaurea.sqlite            il dataset di atenei e gruppi (unica fonte di verità)
-  corsi/                       un database per ateneo, coi suoi corsi (78 file)
+  corsi/                       un database per ateneo, triennali e ciclo unico (78 file)
+  corsi-magistrali/            un database per ateneo, magistrali biennali (78 file)
   index.html  style.css
   js/app.js                    carica il DB, disegna filtri, voti e tabella
-  js/config-filtri.js          le 109 domande       (GENERATO)
+  js/config-filtri.js          le 115 domande       (GENERATO)
   js/nomi-ateneo.js            codice -> nome       (GENERATO)
   js/nomi-gruppo.js            codice -> nome       (GENERATO)
-  js/nomi-corso.js             codice -> nome dei 2.607 corsi (GENERATO)
+  js/nomi-corso.js             codice -> nome dei 5.461 corsi (GENERATO)
   js/termini-paragone.js       i valori contro cui si calcola il voto di un corso (GENERATO)
   js/db-corsi.js               scarica e tiene in memoria i database dei corsi
   js/voto.js                   il voto da 0 a 10

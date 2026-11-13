@@ -41,9 +41,11 @@ from pathlib import Path
 
 RADICE = Path(__file__).resolve().parent.parent
 DB = RADICE / "frontend" / "public" / "almalaurea.sqlite"
-# Course databases, one per university (Phase 4). They contain questions that
+# Course databases, one per university (Phase 4), in two folders: first-level
+# and single-cycle courses, and second-level ones. They contain questions that
 # the aggregate database lacks; see leggi_combinazioni_corsi().
-CORSI = RADICE / "frontend" / "public" / "corsi"
+CARTELLE_CORSI = (RADICE / "frontend" / "public" / "corsi",
+                  RADICE / "frontend" / "public" / "corsi-magistrali")
 USCITA = RADICE / "frontend" / "public" / "js" / "config-filtri.js"
 
 # Official sections from AlmaLaurea sheets grouped into macro-categories
@@ -149,17 +151,27 @@ INTESTAZIONE = """/**
  *
  * DOMANDE SOLO-CORSO (`soloCorso: true`): esistono nelle schede dei singoli
  * corsi e non in quelle di atenei e gruppi. Gli aggregati mettono insieme
- * tutti i tipi di laurea (tipo_corso = ''), i corsi sono lauree di primo
- * livello (tipo_corso = 'L'), e le domande su cosa succede DOPO la triennale
- * (iscrizione alla magistrale, lavora/studia) hanno senso solo li'. La UI le
+ * tutti i tipi di laurea (tipo_corso = ''), ogni corso e' di un tipo solo, e
+ * certe domande hanno senso solo li': cosa succede DOPO la triennale
+ * (iscrizione alla magistrale, lavora/studia) e, per le magistrali, la laurea
+ * di provenienza (ateneo, gruppo, voto, regolarita'). La UI le
  * mostra solo quando il confronto contiene almeno una colonna corso; la
  * proprieta' manca, invece di valere false, su tutte le altre voci.
+ *
+ * VOCI SOLO-CORSO DENTRO UNA DOMANDA DEGLI AGGREGATI (`indicatoriSoloCorso`):
+ * le opzioni di una domanda che atenei e gruppi non pubblicano, perche' poste
+ * a un tipo di laurea solo (per esempio dottorato e master di II livello, o
+ * l'estero «riconosciuto solo nel precedente corso» delle magistrali). La UI
+ * le tratta come le domande solo-corso, opzione per opzione.
  *
  * Nota su una stranezza ereditata dai dati originali, NON corretta a
  * mano: nella sezione 1 la categoria "Eta' alla laurea (%)" include
  * anche "Cittadini stranieri (%)" come indicatore. E' cosi' nella
  * struttura ufficiale della scheda AlmaLaurea (non e' un bug del
- * parser di Fase 0): si lascia com'e', per fedelta' alla fonte.
+ * parser di Fase 0): si lascia com'e', per fedelta' alla fonte. Lo
+ * stesso nelle magistrali: «Regolarita' negli studi del precedente titolo
+ * universitario» ha fra le opzioni anche il voto medio della laurea
+ * precedente (in 110-mi), accanto alle percentuali.
  */
 """
 
@@ -217,10 +229,11 @@ def leggi_combinazioni(db_path):
 def leggi_combinazioni_corsi(cartella):
     """Read the distinct combinations of every course database.
 
-    Course sheets are first-level degrees only, and AlmaLaurea asks their
-    graduates questions that mixed-degree aggregates cannot carry (whether
-    they enrolled in a master's degree, whether they work and study). Those
-    questions exist nowhere else, so the course databases must be read too.
+    A course sheet holds one degree type, and AlmaLaurea asks its graduates
+    questions that mixed-degree aggregates cannot carry: first-level graduates
+    whether they enrolled in a master's degree or work and study,
+    second-level graduates about their previous degree. Those questions exist
+    nowhere else, so the course databases must be read too.
 
     Args:
         cartella: Directory holding one ``<university>.sqlite`` per university.
@@ -275,9 +288,14 @@ def costruisci_config(combinazioni, combinazioni_corsi=()):
     aggregate = set(combinazioni)
     solo_corso = set(combinazioni_corsi) - aggregate
     # Question key -> (combinations seen in aggregates, in courses only).
-    # A question must be entirely one or the other: a mix would show an
-    # aggregate column with holes that look like missing data.
+    # A question that is entirely course-only is marked ``soloCorso``; a mixed
+    # one (a few options asked only of one degree type, such as a master's
+    # graduate's internship "recognised only in the previous degree") lists
+    # those options in ``indicatoriSoloCorso``, so the page can say "solo per
+    # i corsi" in university and group columns instead of showing a hole that
+    # looks like missing data.
     provenienza = {}
+    indicatori_aggregati = {}  # question key -> options seen in aggregates
 
     for tupla in sorted(aggregate | solo_corso):
         indagine, definizione, sezione, categoria, indicatore = tupla
@@ -310,20 +328,23 @@ def costruisci_config(combinazioni, combinazioni_corsi=()):
         voce["definizioni"].add(definizione)
         conta = provenienza.setdefault(chiave, [0, 0])
         conta[1 if tupla in solo_corso else 0] += 1
+        if tupla not in solo_corso:
+            indicatori_aggregati.setdefault(chiave, set()).add(indicatore)
 
     for chiave, (in_aggregati, in_corsi) in provenienza.items():
         if in_aggregati == 0:
             domande[chiave]["soloCorso"] = True
         elif in_corsi:
-            problemi.append(
-                f"la domanda {domande[chiave]['label']!r} ha {in_corsi} voci solo "
-                f"nei corsi e {in_aggregati} anche negli aggregati: nelle colonne "
-                f"ateneo e gruppo quelle voci sembrerebbero dati mancanti"
-            )
+            # Options never seen in the aggregates, under any definition.
+            solo = domande[chiave]["indicatori"] - indicatori_aggregati[chiave]
+            if solo:
+                domande[chiave]["indicatoriSoloCorso"] = solo
 
     config = {macro: [] for macro in ORDINE_MACRO}
     for voce in domande.values():
         voce["indicatori"] = sorted(voce["indicatori"])
+        if "indicatoriSoloCorso" in voce:
+            voce["indicatoriSoloCorso"] = sorted(voce["indicatoriSoloCorso"])
         voce["definizioni"] = sorted(voce["definizioni"])
         config[SEZIONE_A_MACRO[voce["sezione"]]].append(voce)
 
@@ -389,12 +410,13 @@ def main():
     if not DB.exists():
         sys.exit(f"Database non trovato: {DB}")
 
-    if not CORSI.is_dir():
-        sys.exit(f"Cartella dei corsi non trovata: {CORSI}")
+    combinazioni_corsi = set()
+    for cartella in CARTELLE_CORSI:
+        if not cartella.is_dir():
+            sys.exit(f"Cartella dei corsi non trovata: {cartella}")
+        combinazioni_corsi |= leggi_combinazioni_corsi(cartella)
 
-    config, problemi = costruisci_config(
-        leggi_combinazioni(DB), leggi_combinazioni_corsi(CORSI)
-    )
+    config, problemi = costruisci_config(leggi_combinazioni(DB), combinazioni_corsi)
     testo = rendi_javascript(config)
 
     for p in problemi:
