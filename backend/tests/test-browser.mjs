@@ -227,14 +227,15 @@ async function main() {
     // Il link si prova PRIMA di chiudere il benvenuto: dopo, il «visto»
     // salvato lo nasconderebbe comunque e la prova non direbbe niente.
     const statoBenvenuto = (v) => v(`({
+      striscia: !document.getElementById('clash-benvenuto').hidden,
       aperto: document.getElementById('dlg-benvenuto').open,
       fuoco: document.activeElement?.id,
       testo: document.getElementById('dlg-benvenuto').textContent.replace(/\\s+/g, ' '),
       posta: document.querySelector('#dlg-benvenuto a')?.getAttribute('href'),
     })`);
     const primaVisita = await statoBenvenuto(valuta);
-    verifica('prima visita: il benvenuto e\' aperto, col fuoco sul bottone, e dice come scriverci',
-      primaVisita.aperto && primaVisita.fuoco === 'inizia' &&
+    verifica('prima visita: striscia visibile senza dialogo, testo e contatto conservati',
+      !primaVisita.aperto && primaVisita.striscia &&
       primaVisita.testo.includes('progetto indipendente') && primaVisita.testo.includes('Inizia a confrontare') &&
       primaVisita.posta?.startsWith('mailto:info@matchuni.it'), JSON.stringify(primaVisita));
     const apriPronta = async (indirizzo) => {
@@ -250,6 +251,7 @@ async function main() {
     verifica('chi arriva da un link al confronto non vede il benvenuto, anche alla prima visita',
       !benvenutoLink.aperto, JSON.stringify(benvenutoLink));
     const dopoInizia = await valuta(`(() => {
+      document.getElementById('clash-chi-siamo').click();
       document.getElementById('inizia').click();
       return { aperto: document.getElementById('dlg-benvenuto').open,
                visto: localStorage.getItem('matchuni-benvenuto-visto') };
@@ -1414,11 +1416,8 @@ async function main() {
       JSON.stringify({ ...s3, cerca3, errori: link3.erroriConsole }));
     link3.chiudi();
 
-    // --- 9c. Sul telefono si parte vuoti ---
-    // Una scheda nuova gia' a 390 px PRIMA di caricare la pagina, come un
-    // telefono vero: nessuna universita' d'esempio, il pulsante grande
-    // «Scegli uni da confrontare» e la frase sotto i Numeri senza «colonna».
-    // Un link col confronto apre comunque le sue colonne.
+    // --- 9c. Latest Clash on a phone, catalogue and entry attribution ---
+    // Set the viewport before navigation to exercise the real startup path.
     const telefono = await apriScheda('about:blank');
     await telefono.invia('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     const caricaSuTelefono = async (query) => {
@@ -1433,15 +1432,64 @@ async function main() {
         voti: document.querySelector('#griglia-voti .sintesi-vuota')?.textContent ?? '',
         c: new URLSearchParams(location.search).getAll('c') })`);
     };
+    // Injected scripts only run once the Page domain is enabled on this tab.
+    await telefono.invia('Page.enable');
+    await telefono.invia('Page.addScriptToEvaluateOnNewDocument', { source: `
+      localStorage.removeItem('matchuni-benvenuto-visto');
+      window.__eventi = [];
+      setTimeout(() => { window.goatcounter = { count: (o) => window.__eventi.push(o.path) }; }, 1000);
+    ` });
+    const catalogo = await apriScheda(new URL('clash/', INDIRIZZO).href);
+    await aspettaInPagina(catalogo.valuta, `document.querySelectorAll('.clash-riquadro').length > 0`, 'catalogo Clash');
+    const voci = await catalogo.valuta(`(async () => (await (await fetch('elenco.json')).json()).clash)()`);
+    const links = await catalogo.valuta(`[...document.querySelectorAll('.clash-riquadro')].map(a => ({ id: a.id, href: a.href }))`);
+    verifica('catalogo: un riquadro per voce, nello stesso ordine', links.length === voci.length && links.every((l, i) => l.id === voci[i].id));
+    for (const [i, link] of links.entries()) {
+      const pagina = await apriPronta(link.href);
+      const codici = await pagina.valuta(`new URLSearchParams(location.search).getAll('c')`);
+      verifica(`Clash ${link.id}: due colonne corrette`, JSON.stringify(codici) === JSON.stringify([voci[i].a, voci[i].b].map(c => `corso:${c.ateneo}:${c.corso}`)));
+      pagina.chiudi();
+    }
+    const filtrati = await catalogo.valuta(`(() => {
+      const input = document.getElementById('clash-cerca'); input.value = 'SAPIÉNZA'; input.dispatchEvent(new Event('input'));
+      return [...document.querySelectorAll('.clash-riquadro')].filter(a => !a.hidden).map(a => a.id);
+    })()`);
+    verifica('ricerca ignora maiuscole e accenti', JSON.stringify(filtrati) === JSON.stringify(voci.filter(c => /sapienza/i.test(c.a.nome + c.b.nome)).map(c => c.id)));
+    catalogo.chiudi();
     const vuotoTel = await caricaSuTelefono('');
-    verifica('sul telefono la pagina parte vuota, con «Scegli uni da confrontare»',
-      vuotoTel.colonne === 0 && vuotoTel.pulsante === 'Scegli uni da confrontare' &&
-      vuotoTel.voti === "Scegli un'università per vedere i voti." && vuotoTel.c.length === 0 &&
-      telefono.erroriConsole.length === 0, JSON.stringify({ ...vuotoTel, errori: telefono.erroriConsole }));
+    await aspettaInPagina(telefono.valuta, `window.__eventi.includes('pronto:esempio')`, 'evento esempio pronto');
+    const esempioTel = await telefono.valuta(`({ avviso: !document.getElementById('clash-esempio').hidden, striscia: !document.getElementById('clash-benvenuto').hidden, dialogo: !!document.querySelector('dialog[open]'), eventi: window.__eventi })`);
+    verifica('esempio e benvenuto inline, eventi accodati una volta', esempioTel.avviso && esempioTel.striscia && !esempioTel.dialogo && esempioTel.eventi.filter(e => e === 'arrivo:esempio').length === 1 && esempioTel.eventi.filter(e => e === 'pronto:esempio').length === 1);
+    await telefono.valuta(`document.querySelector('.sel-codice').dispatchEvent(new Event('change'))`);
+    verifica('la modifica nasconde l’avviso', await telefono.valuta(`document.getElementById('clash-esempio').hidden`));
+    verifica('sul telefono parte l’ultimo Clash', vuotoTel.colonne === 2 && JSON.stringify(vuotoTel.c) === JSON.stringify([voci[0].a, voci[0].b].map(c => `corso:${c.ateneo}:${c.corso}`)));
     const linkTel = await caricaSuTelefono('?c=ateneo:70117');
     verifica('sul telefono un link col confronto apre le sue colonne',
       linkTel.colonne === 1 && JSON.stringify(linkTel.c) === JSON.stringify(['ateneo:70117']) &&
       telefono.erroriConsole.length === 0, JSON.stringify({ ...linkTel, errori: telefono.erroriConsole }));
+
+    verifica('link sul telefono: niente avviso o striscia', await telefono.valuta(`document.getElementById('clash-esempio').hidden && document.getElementById('clash-benvenuto').hidden`));
+    const corsiTel = [voci[0].a, voci[0].b].map(c => `corso:${c.ateneo}:${c.corso}`);
+    const linkCorsiTel = await caricaSuTelefono(`?${corsiTel.map(c => `c=${c}`).join('&')}`);
+    verifica('sul telefono un link a due corsi apre quelle due colonne, senza esempio ne\' striscia',
+      linkCorsiTel.colonne === 2 && JSON.stringify(linkCorsiTel.c) === JSON.stringify(corsiTel) &&
+      await telefono.valuta(`document.getElementById('clash-esempio').hidden && document.getElementById('clash-benvenuto').hidden`),
+      JSON.stringify(linkCorsiTel));
+    await caricaSuTelefono('?c=ateneo:70001&c=ateneo:70002&da=clash');
+    await aspettaInPagina(telefono.valuta, `window.__eventi.includes('pronto:clash')`, 'origine clash pronta');
+    verifica('da rimosso, arrivo e pronto con origine clash', await telefono.valuta(`!new URLSearchParams(location.search).has('da') && window.__eventi.filter(e => e === 'arrivo:clash').length === 1`));
+    await caricaSuTelefono('?c=ateneo:70001&c=ateneo:70002&da=INVALIDO');
+    await aspettaInPagina(telefono.valuta, `window.__eventi.includes('pronto:link')`, 'origine link pronta');
+    verifica('origine non valida ignorata', await telefono.valuta(`window.__eventi.includes('arrivo:link')`));
+    const blocco = await telefono.invia('Page.addScriptToEvaluateOnNewDocument', { source: `
+      const veroFetch = window.fetch;
+      window.fetch = (url, ...resto) => String(url).endsWith('clash/elenco.json') ? Promise.reject(new Error('offline')) : veroFetch(url, ...resto);
+    ` });
+    const senzaCatalogo = await caricaSuTelefono('');
+    verifica('catalogo indisponibile: partenza vuota e console pulita', senzaCatalogo.colonne === 0 && telefono.erroriConsole.length === 0);
+    await aspettaInPagina(telefono.valuta, `window.__eventi.includes('arrivo:home')`, 'origine home');
+    verifica('home vuota senza evento pronto', await telefono.valuta(`!window.__eventi.some(e => e.startsWith('pronto:'))`));
+    await telefono.invia('Page.removeScriptToEvaluateOnNewDocument', { identifier: blocco.identifier });
 
     // --- 9d. Pochi dati: detto una volta per colonna, non in ogni riga ---
     // Filosofia (L-5) a Roma Tre ha 24 intervistati sul lavoro e 38
@@ -1889,10 +1937,13 @@ async function main() {
       return { url: tag?.dataset.goatcounter, src: tag?.getAttribute('src'), async: tag?.async, assente, chiamate,
                piede: document.querySelector('.piede').textContent.replace(/\\s+/g, ' ').includes('Visite contate in forma anonima con GoatCounter, senza cookie.') };
     })()`);
+    // The entry queue (arrivo:/pronto:) may flush into the fake counter too:
+    // only the pick itself is checked here, the entry events have their own test.
+    const sceltaContata = contatore.chiamate.filter((c) => !/^(arrivo|pronto):/.test(c.path));
     verifica('il contatore c\'e\', non si raggiunge in prova, e scegliere Roma Tre conta «ateneo: Roma Tre»',
       contatore.url === 'https://matchuni.goatcounter.com/count' && contatore.src === 'https://gc.zgo.at/count.js' && contatore.async &&
-      contatore.assente && contatore.piede && contatore.chiamate.length === 1 &&
-      contatore.chiamate[0].path === 'ateneo: Roma Tre' && contatore.chiamate[0].event === true,
+      contatore.assente && contatore.piede && sceltaContata.length === 1 &&
+      sceltaContata[0].path === 'ateneo: Roma Tre' && sceltaContata[0].event === true,
       JSON.stringify(contatore));
 
     // --- 10. Console pulita ---

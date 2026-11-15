@@ -1638,3 +1638,22 @@ td.cella-campione-piccolo { color: var(--tenue); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Clash catalogue and inline notices share the site's theme variables. */
+.clash-pagina { max-width: 760px; margin: 0 auto; padding: 16px 20px 24px; font-size: 16px; }
+.clash-marchio { font-size: 1.12rem; font-weight: 800; letter-spacing: -0.015em; color: var(--inchiostro); text-decoration: none; }
+.clash-pagina h1 { font-size: clamp(28px, 7vw, 40px); }
+.clash-cerca { display: block; width: 100%; min-height: 48px; margin-top: 8px; padding: 12px; font: inherit; color: inherit; background: var(--bg); border: 1px solid currentColor; border-radius: 12px; }
+.clash-elenco { display: grid; gap: 16px; }
+.clash-riquadro { display: block; padding: 24px; background: var(--superficie); border: 1px solid var(--linea); border-radius: 16px; color: inherit; text-decoration: none; scroll-margin-top: 16px; }
+.clash-riquadro h2 { margin: 0 0 12px; font-size: 26px; }
+.clash-riquadro p { margin: 0 0 12px; font-size: 18px; }
+.clash-riquadro small { font-size: 16px; }
+.clash-riquadro:focus-visible, .clash-riquadro:hover { outline: 2px solid currentColor; outline-offset: 3px; }
+/* Both notices stay small: on a phone the numbers must start on the first screen. */
+.clash-striscia, .clash-avviso { margin: 0 0 8px; border: 1px solid var(--linea); border-radius: 12px; background: var(--superficie); font-size: 14px; line-height: 1.4; }
+.clash-striscia { display: flex; align-items: center; gap: 4px; padding: 2px 2px 2px 14px; }
+.clash-striscia p { flex: 1; margin: 0; }
+.clash-striscia button { flex: none; width: 44px; height: 44px; padding: 0; border: 0; background: none; color: var(--tenue); font-size: 22px; cursor: pointer; }
+.clash-avviso { padding: 10px 14px; }
+.clash-riquadro[hidden], .clash-striscia[hidden], .clash-avviso[hidden] { display: none; }

@@ -377,6 +377,38 @@ const NOTA_LAUREA = { 'ciclo-unico': 'ciclo unico', magistrale: 'magistrale' };
  *
  * @param {{tipo:string,codice:string,ateneo?:string}} colonna - Column just picked.
  */
+// Capture attribution before any render rewrites the address.
+const ingresso = new URLSearchParams(location.search);
+const provenienza = ingresso.get('da');
+let origine = /^[a-z0-9-]{1,40}$/.test(provenienza ?? '') ? provenienza : null;
+let prontoContato = false;
+const eventiIngresso = [];
+let timerEventi;
+
+/** Wait briefly for the async counter without keeping blocked visitors polling. */
+function contaIngresso(nome) {
+  eventiIngresso.push({ path: nome, title: nome, event: true });
+  if (timerEventi) return;
+  const scadenza = Date.now() + 30000;
+  const svuota = () => {
+    if (window.goatcounter?.count) {
+      while (eventiIngresso.length) window.goatcounter.count(eventiIngresso.shift());
+    }
+    if (!eventiIngresso.length || Date.now() >= scadenza) {
+      clearInterval(timerEventi);
+      timerEventi = null;
+      eventiIngresso.length = 0;
+    }
+  };
+  timerEventi = setInterval(svuota, 200);
+  svuota();
+}
+
+/** Stop labelling the comparison as an example after a user's edit. */
+function togliEsempio() {
+  document.getElementById('clash-esempio').hidden = true;
+}
+
 function contaScelta(colonna) {
   const nome = colonna.tipo === 'corso'
     ? `corso: ${etichettaColonna(colonna)} (${etichettaCodice('ateneo', colonna.ateneo)})`
@@ -527,6 +559,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
   }
 
   function mostra() {
+    togliEsempio();
     stato.errore = undefined;
     renderTabella();
     if (stato.tipo === 'corso') preparaColonnaCorso(stato);
@@ -567,6 +600,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
   btnRimuovi.title = 'Rimuovi questa colonna';
   btnRimuovi.textContent = '×';
   btnRimuovi.addEventListener('click', () => {
+    togliEsempio();
     colonne = colonne.filter((c) => c.id !== id);
     AGGIORNA_CAMPI_COLONNA.delete(id);
     contenitore.remove();
@@ -605,6 +639,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
     valore: () => (stato.tipo === 'gruppo' ? `gruppo:${stato.codice}` : `ateneo:${ateneoDellaColonna()}`),
     testo: () => etichettaCodice(stato.tipo === 'gruppo' ? 'gruppo' : 'ateneo', ateneoDellaColonna()),
     scegli: (valore) => {
+      togliEsempio();
       const [tipo, codice] = valore.split(':');
       // Picking a university shows the whole university: a course of the
       // previous one would not belong to it.
@@ -656,6 +691,7 @@ function creaColonna(tipoIniziale, codiceIniziale, ateneoIniziale) {
 
 /** Adds a university column on a wide screen and redraws. */
 function aggiungiColonna() {
+  togliEsempio();
   // Prefer a university that has not already been selected, when available.
   const usati = new Set(colonne.filter((c) => c.tipo === 'ateneo').map((c) => c.codice));
   const prossimo = codiciAteneo.find((c) => !usati.has(c)) ?? codiciAteneo[0];
@@ -714,6 +750,7 @@ function apriNuovaColonna() {
     valore: () => '',
     testo: () => 'Scegli un ateneo o un\'area',
     scegli: (valore) => {
+      togliEsempio();
       const [tipo, codice] = valore.split(':');
       creaColonna(tipo, codice);
       contaScelta(colonne.at(-1));
@@ -1469,6 +1506,13 @@ function renderTabella() {
   renderSintesi(datiPerColonna);
   renderVoti(datiPerColonna);
   aggiornaAvvisi(datiPerColonna);
+  if (origine && !prontoContato && datiPerColonna.filter(({ colonna, inCaricamento }) =>
+    !inCaricamento && !colonna.errore && (colonna.tipo !== 'corso' ||
+      ateneoCaricato(colonna.ateneo, fonteCorso(colonna)))).length >= 2) {
+    prontoContato = true;
+    // Deferred so the event leaves after this render has drawn the cells.
+    setTimeout(() => contaIngresso(`pronto:${origine}`));
+  }
 
   // Determine selected questions before rendering the header to identify which
   // surveys will appear and which sample sizes belong below each column name.
@@ -2388,12 +2432,35 @@ async function avvia() {
       throw new Error('Il database è stato caricato ma non contiene codici ateneo/gruppo. Controlla il file.');
     }
 
-    // A link opens its own comparison; otherwise a wide screen starts with
-    // two columns so the user immediately sees a populated one. A phone
-    // starts empty: there two example universities disorient more than they
-    // show, and the page opens on "Scegli uni da confrontare".
-    const daLink = new URLSearchParams(location.search);
-    const iniziali = colonneDaIndirizzo(daLink);
+    // The owner's decision of 15 Nov 2026 supersedes the empty phone
+    // start of 26 Oct: the latest valid Clash now demonstrates a comparison.
+    const daLink = ingresso;
+    let iniziali = colonneDaIndirizzo(daLink);
+    const linkValido = iniziali.length > 0;
+    let esempio = null;
+    if (!linkValido && TELEFONO.matches) {
+      try {
+        const risposta = await fetch('clash/elenco.json');
+        if (risposta.ok) {
+          const dati = await risposta.json();
+          esempio = (Array.isArray(dati.clash) ? dati.clash : []).find((c) => {
+            if (!c?.titolo || !c.a?.nome || !c.b?.nome) return false;
+            const parametri = new URLSearchParams();
+            for (const lato of [c.a, c.b]) parametri.append('c', `corso:${lato.ateneo}:${lato.corso}`);
+            return colonneDaIndirizzo(parametri).length === 2;
+          });
+        }
+      } catch { /* An unavailable example must leave the comparison usable. */ }
+      if (esempio) {
+        iniziali = [esempio.a, esempio.b].map((c) => ({ tipo: 'corso', ateneo: c.ateneo, codice: c.corso }));
+        const nota = document.getElementById('clash-esempio');
+        nota.replaceChildren(document.createTextNode(`Esempio: l'ultimo Clash, ${esempio.titolo}: ${esempio.a.nome} o ${esempio.b.nome}. Cambia le università quando vuoi. `),
+          el('a', { href: 'clash/' }, 'Tutti i Clash'));
+        nota.hidden = false;
+      }
+    }
+    origine ??= linkValido ? 'link' : esempio ? 'esempio' : 'home';
+    contaIngresso(`arrivo:${origine}`);
     if (iniziali.length > 0) {
       for (const c of iniziali) creaColonna(c.tipo, c.codice, c.ateneo);
     } else if (!TELEFONO.matches) {
@@ -2669,16 +2736,16 @@ if (elAiInvia) {
 // --- 8. Welcome note ---
 // Shown once, on a first visit to the plain page: a link to one comparison
 // skips it, since whoever follows it came for that number. It counts as seen
-// the moment it opens, so a reload never brings it back. Without storage it
+// the moment the strip appears, so a reload never brings it back. Without storage it
 // is not shown at all: a note that cannot be remembered would come back on
 // every visit.
 
 const CHIAVE_BENVENUTO = 'matchuni-benvenuto-visto';
 const elDlgBenvenuto = document.getElementById('dlg-benvenuto');
 
-/** Opens the welcome note unless it was seen or the page came from a link. */
+/** Show a quiet inline introduction once, without hiding the comparison. */
 function mostraBenvenuto() {
-  if (new URLSearchParams(location.search).has('c')) return;
+  if (ingresso.has('c')) return;
   try {
     if (localStorage.getItem(CHIAVE_BENVENUTO)) return;
     localStorage.setItem(CHIAVE_BENVENUTO, '1');
@@ -2689,8 +2756,15 @@ function mostraBenvenuto() {
     if (evento.target === elDlgBenvenuto) elDlgBenvenuto.close();
   });
   document.getElementById('inizia').addEventListener('click', () => elDlgBenvenuto.close());
-  elDlgBenvenuto.showModal();
+  document.getElementById('clash-benvenuto').hidden = false;
 }
 
+document.getElementById('clash-chi-siamo').addEventListener('click', (evento) => {
+  evento.preventDefault();
+  elDlgBenvenuto.showModal();
+});
+document.getElementById('clash-chiudi').addEventListener('click', () => {
+  document.getElementById('clash-benvenuto').hidden = true;
+});
 mostraBenvenuto();
 avvia();

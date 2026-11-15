@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>I Clash di MatchUni</title>
+<meta name="description" content="Il confronto che hai visto nel video, già aperto con i dati AlmaLaurea: tocca un Clash e guarda i numeri." />
+<meta name="theme-color" content="#f5f7f7" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0f1615" media="(prefers-color-scheme: dark)" />
+<link rel="canonical" href="https://matchuni.it/clash/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="MatchUni" />
+<meta property="og:title" content="I Clash di MatchUni" />
+<meta property="og:description" content="Il confronto che hai visto nel video, già aperto con i dati AlmaLaurea." />
+<meta property="og:url" content="https://matchuni.it/clash/" />
+<meta property="og:locale" content="it_IT" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="../style.css" />
+<script>
+  try {
+    const tema = localStorage.getItem('almalaurea-tema');
+    if (tema === 'chiaro' || tema === 'scuro') document.documentElement.dataset.tema = tema;
+  } catch { /* Storage is optional. */ }
+</script>
+</head>
+<body>
+<header class="testata">
+  <div class="testata-barra">
+    <div class="marchio">
+      <a class="clash-marchio" href="../">MatchUni</a>
+      <p>Confronta i dati dei laureati · Dati ufficiali AlmaLaurea 2025</p>
+    </div>
+  </div>
+</header>
+<main class="clash-pagina">
+  <h1>I Clash di MatchUni</h1>
+  <p>Il confronto che hai visto nel video, già aperto con i dati AlmaLaurea</p>
+  <label for="clash-cerca">Cerca un corso o un ateneo</label>
+  <input id="clash-cerca" class="clash-cerca" type="search" placeholder="Cerca un corso o un ateneo…" />
+  <p id="clash-stato" role="status">Carico i Clash…</p>
+  <div id="clash-elenco" class="clash-elenco"></div>
+</main>
+<footer class="clash-pagina">Fonte: AlmaLaurea. Progetto indipendente, non affiliato ad AlmaLaurea.
+  Visite contate in forma anonima con GoatCounter, senza cookie.</footer>
+<script type="module" src="../js/clash.js"></script>
+<script data-goatcounter="https://matchuni.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+</body>
+</html>

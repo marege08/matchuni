@@ -1,0 +1,436 @@
+{
+ "clash": [
+  {
+   "id": "ingegneria-meccanica-roma",
+   "titolo": "Ingegneria meccanica",
+   "tipo": "triennale",
+   "uscito": "2026-11-14T14:20:57+0000",
+   "a": {
+    "nome": "Roma Tre",
+    "ateneo": "70117",
+    "corso": "0580706200900001"
+   },
+   "b": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106200900012"
+   }
+  },
+  {
+   "id": "informatica-nord",
+   "titolo": "Informatica",
+   "tipo": "triennale",
+   "uscito": "2026-11-14T13:17:50+0000",
+   "a": {
+    "nome": "Pisa",
+    "ateneo": "70024",
+    "corso": "0500106203100002"
+   },
+   "b": {
+    "nome": "UniTo",
+    "ateneo": "70031",
+    "corso": "0010106203100004"
+   }
+  },
+  {
+   "id": "ingegneria-meccanica-poli",
+   "titolo": "Ingegneria meccanica",
+   "tipo": "triennale",
+   "uscito": "2026-11-14T13:10:58+0000",
+   "a": {
+    "nome": "PoliTo",
+    "ateneo": "70032",
+    "corso": "0010206200900014"
+   },
+   "b": {
+    "nome": "Poliba",
+    "ateneo": "70048",
+    "corso": "0720206200900002"
+   }
+  },
+  {
+   "id": "economia-bologna",
+   "titolo": "Economia aziendale",
+   "tipo": "triennale",
+   "uscito": "2026-11-14T12:01:09+0000",
+   "a": {
+    "nome": "Bologna",
+    "ateneo": "70003",
+    "corso": "0370106201800005"
+   },
+   "b": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106201800003"
+   }
+  },
+  {
+   "id": "giurisprudenza-bologna-roma",
+   "titolo": "Giurisprudenza",
+   "tipo": "ciclo unico",
+   "uscito": "2026-11-14T09:26:37+0000",
+   "a": {
+    "nome": "Bologna",
+    "ateneo": "70003",
+    "corso": "0370107051400001"
+   },
+   "b": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580107051400002"
+   }
+  },
+  {
+   "id": "medicina-emilia",
+   "titolo": "Medicina",
+   "tipo": "ciclo unico",
+   "uscito": "2026-11-13T15:43:35+0000",
+   "a": {
+    "nome": "Bologna",
+    "ateneo": "70003",
+    "corso": "0370107304200007"
+   },
+   "b": {
+    "nome": "Modena",
+    "ateneo": "70017",
+    "corso": "0360107304200001"
+   }
+  },
+  {
+   "id": "giurisprudenza-roma",
+   "titolo": "Giurisprudenza",
+   "tipo": "ciclo unico",
+   "uscito": "2026-11-13T13:26:15+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580107051400002"
+   },
+   "b": {
+    "nome": "Roma Tre",
+    "ateneo": "70117",
+    "corso": "0580707051400001"
+   }
+  },
+  {
+   "id": "ingegneria-meccanica-toscana",
+   "titolo": "Ingegneria meccanica",
+   "tipo": "triennale",
+   "uscito": "2026-11-13T13:21:47+0000",
+   "a": {
+    "nome": "Firenze",
+    "ateneo": "70010",
+    "corso": "0480106200900004"
+   },
+   "b": {
+    "nome": "Pisa",
+    "ateneo": "70024",
+    "corso": "0500106200900011"
+   }
+  },
+  {
+   "id": "scienze-politiche-bari",
+   "titolo": "Scienze politiche",
+   "tipo": "triennale",
+   "uscito": "2026-11-13T13:16:58+0000",
+   "a": {
+    "nome": "Bari",
+    "ateneo": "70002",
+    "corso": "0720106203600002"
+   },
+   "b": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106203600001"
+   }
+  },
+  {
+   "id": "ingegneria-meccanica-genova",
+   "titolo": "Ingegneria meccanica",
+   "tipo": "triennale",
+   "uscito": "2026-11-13T13:11:37+0000",
+   "a": {
+    "nome": "Genova",
+    "ateneo": "70011",
+    "corso": "0100106200900003"
+   },
+   "b": {
+    "nome": "PoliTo",
+    "ateneo": "70032",
+    "corso": "0010206200900014"
+   }
+  },
+  {
+   "id": "medicina-roma",
+   "titolo": "Medicina",
+   "tipo": "ciclo unico",
+   "uscito": "2026-11-12T14:27:12+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580107304200005"
+   },
+   "b": {
+    "nome": "Tor Vergata",
+    "ateneo": "70027",
+    "corso": "0580207304200002"
+   }
+  },
+  {
+   "id": "informatica-roma",
+   "titolo": "Informatica",
+   "tipo": "triennale",
+   "uscito": "2026-11-12T13:55:14+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106203100001"
+   },
+   "b": {
+    "nome": "Tor Vergata",
+    "ateneo": "70027",
+    "corso": "0580206203100001"
+   }
+  },
+  {
+   "id": "ingegneria-informatica-sud",
+   "titolo": "Ingegneria informatica",
+   "tipo": "triennale",
+   "uscito": "2026-11-12T13:37:53+0000",
+   "a": {
+    "nome": "Unical",
+    "ateneo": "70005",
+    "corso": "0780106200800003"
+   },
+   "b": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106200800004"
+   }
+  },
+  {
+   "id": "comunicazione-roma",
+   "titolo": "Comunicazione",
+   "tipo": "triennale",
+   "uscito": "2026-11-12T13:32:59+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106202000002"
+   },
+   "b": {
+    "nome": "Roma Tre",
+    "ateneo": "70117",
+    "corso": "0580706202000001"
+   }
+  },
+  {
+   "id": "ingegneria-gestionale-poli",
+   "titolo": "Ingegneria gestionale",
+   "tipo": "triennale",
+   "uscito": "2026-11-12T13:27:43+0000",
+   "a": {
+    "nome": "PoliTo",
+    "ateneo": "70032",
+    "corso": "0010206200800009"
+   },
+   "b": {
+    "nome": "Poliba",
+    "ateneo": "70048",
+    "corso": "0720206200900003"
+   }
+  },
+  {
+   "id": "chimica",
+   "titolo": "Chimica",
+   "tipo": "triennale",
+   "uscito": "2026-11-11T15:32:45+0000",
+   "a": {
+    "nome": "Genova",
+    "ateneo": "70011",
+    "corso": "0100106202700001"
+   },
+   "b": {
+    "nome": "UniTo",
+    "ateneo": "70031",
+    "corso": "0010106202700007"
+   }
+  },
+  {
+   "id": "biologia",
+   "titolo": "Biologia",
+   "tipo": "triennale",
+   "uscito": "2026-11-11T15:29:08+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106201300001"
+   },
+   "b": {
+    "nome": "Tor Vergata",
+    "ateneo": "70027",
+    "corso": "0580206201300001"
+   }
+  },
+  {
+   "id": "ingegneria-informatica-roma",
+   "titolo": "Ingegneria informatica",
+   "tipo": "triennale",
+   "uscito": "2026-11-11T15:05:15+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106200800004"
+   },
+   "b": {
+    "nome": "Tor Vergata",
+    "ateneo": "70027",
+    "corso": "0580206200800002"
+   }
+  },
+  {
+   "id": "ingegneria-civile",
+   "titolo": "Ingegneria civile",
+   "tipo": "triennale",
+   "uscito": "2026-11-11T15:01:24+0000",
+   "a": {
+    "nome": "PoliTo",
+    "ateneo": "70032",
+    "corso": "0010206200700001"
+   },
+   "b": {
+    "nome": "Poliba",
+    "ateneo": "70048",
+    "corso": "0720206200700004"
+   }
+  },
+  {
+   "id": "ingegneria-informatica-nord",
+   "titolo": "Ingegneria informatica",
+   "tipo": "triennale",
+   "uscito": "2026-11-11T13:52:24+0000",
+   "a": {
+    "nome": "Trento",
+    "ateneo": "70062",
+    "corso": "0220106200800001"
+   },
+   "b": {
+    "nome": "Pavia",
+    "ateneo": "70022",
+    "corso": "0180106200800009"
+   }
+  },
+  {
+   "id": "matematica",
+   "titolo": "Matematica",
+   "tipo": "triennale",
+   "uscito": "2026-11-10T15:58:18+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106203500001"
+   },
+   "b": {
+    "nome": "Tor Vergata",
+    "ateneo": "70027",
+    "corso": "0580206203500001"
+   }
+  },
+  {
+   "id": "giurisprudenza",
+   "titolo": "Giurisprudenza",
+   "tipo": "ciclo unico",
+   "uscito": "2026-11-10T15:06:53+0000",
+   "a": {
+    "nome": "Bologna",
+    "ateneo": "70003",
+    "corso": "0370107051400001"
+   },
+   "b": {
+    "nome": "Statale",
+    "ateneo": "70015",
+    "corso": "0150107051400001"
+   }
+  },
+  {
+   "id": "ingegneria-gestionale",
+   "titolo": "Ingegneria gestionale",
+   "tipo": "triennale",
+   "uscito": "2026-11-10T14:54:53+0000",
+   "a": {
+    "nome": "Firenze",
+    "ateneo": "70010",
+    "corso": "0480106200900005"
+   },
+   "b": {
+    "nome": "Pisa",
+    "ateneo": "70024",
+    "corso": "0500106200900003"
+   }
+  },
+  {
+   "id": "scienze-politiche",
+   "titolo": "Scienze politiche",
+   "tipo": "triennale",
+   "uscito": "2026-11-10T14:39:27+0000",
+   "a": {
+    "nome": "Bologna",
+    "ateneo": "70003",
+    "corso": "0370106203600002"
+   },
+   "b": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106203600001"
+   }
+  },
+  {
+   "id": "ingegneria-informatica",
+   "titolo": "Ingegneria informatica",
+   "tipo": "triennale",
+   "uscito": "2026-11-09T20:19:21+0000",
+   "a": {
+    "nome": "PoliTo",
+    "ateneo": "70032",
+    "corso": "0010206200800013"
+   },
+   "b": {
+    "nome": "Poliba",
+    "ateneo": "70048",
+    "corso": "0720206200800001"
+   }
+  },
+  {
+   "id": "economia-roma",
+   "titolo": "Economia aziendale",
+   "tipo": "triennale",
+   "uscito": "2026-11-09T18:39:15+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106201800003"
+   },
+   "b": {
+    "nome": "Tor Vergata",
+    "ateneo": "70027",
+    "corso": "0580206201800002"
+   }
+  },
+  {
+   "id": "economia-nord",
+   "titolo": "Economia aziendale",
+   "tipo": "triennale",
+   "uscito": "2026-11-09T18:32:19+0000",
+   "a": {
+    "nome": "Statale",
+    "ateneo": "70015",
+    "corso": "0150106201800001"
+   },
+   "b": {
+    "nome": "UniTo",
+    "ateneo": "70031",
+    "corso": "0010106201800005"
+   }
+  }
+ ]
+}
