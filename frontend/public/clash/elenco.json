@@ -1,6 +1,54 @@
 {
  "clash": [
   {
+   "id": "ingegneria-gestionale-roma",
+   "titolo": "Ingegneria gestionale",
+   "tipo": "triennale",
+   "uscito": "2026-11-15T14:50:57+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106200800011"
+   },
+   "b": {
+    "nome": "Tor Vergata",
+    "ateneo": "70027",
+    "corso": "0580206200900001"
+   }
+  },
+  {
+   "id": "medicina-toscana",
+   "titolo": "Medicina",
+   "tipo": "ciclo unico",
+   "uscito": "2026-11-15T14:13:49+0000",
+   "a": {
+    "nome": "Firenze",
+    "ateneo": "70010",
+    "corso": "0480107304200001"
+   },
+   "b": {
+    "nome": "Pisa",
+    "ateneo": "70024",
+    "corso": "0500107304200001"
+   }
+  },
+  {
+   "id": "chimica-roma",
+   "titolo": "Chimica",
+   "tipo": "triennale",
+   "uscito": "2026-11-15T14:09:44+0000",
+   "a": {
+    "nome": "Sapienza",
+    "ateneo": "70026",
+    "corso": "0580106202700001"
+   },
+   "b": {
+    "nome": "Tor Vergata",
+    "ateneo": "70027",
+    "corso": "0580206202700003"
+   }
+  },
+  {
    "id": "ingegneria-meccanica-roma",
    "titolo": "Ingegneria meccanica",
    "tipo": "triennale",
