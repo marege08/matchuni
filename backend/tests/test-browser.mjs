@@ -258,14 +258,23 @@ async function main() {
     })()`);
     const seconda = await apriPronta(INDIRIZZO);
     const benvenutoSeconda = await statoBenvenuto(seconda.valuta);
-    seconda.chiudi();
-    // Le schede aperte qui sopra lasciano dietro questa: una scheda nascosta
-    // non disegna (niente requestAnimationFrame) e le prove del telefono piu'
-    // sotto fallirebbero per questo, non per il sito.
-    await invia('Page.bringToFront');
     verifica('«Inizia a confrontare» lo chiude e alla visita dopo non torna',
       !dopoInizia.aperto && dopoInizia.visto === '1' && !benvenutoSeconda.aperto,
       JSON.stringify({ dopoInizia, benvenutoSeconda }));
+    const chiSiamoSeconda = await seconda.valuta(`(() => {
+      const link = document.getElementById('piede-chi-siamo');
+      const dialogo = document.getElementById('dlg-benvenuto');
+      link?.click();
+      const aperto = dialogo.open;
+      document.getElementById('inizia').click();
+      return { link: !!link, aperto, richiuso: !dialogo.open };
+    })()`);
+    verifica('alla seconda visita la striscia è nascosta e «Chi siamo» nel piede apre il dialogo, che «Inizia a confrontare» richiude',
+      !benvenutoSeconda.striscia && chiSiamoSeconda.link && chiSiamoSeconda.aperto && chiSiamoSeconda.richiuso,
+      JSON.stringify({ benvenutoSeconda, chiSiamoSeconda }));
+    seconda.chiudi();
+    // Restore the original tab so requestAnimationFrame runs in later tests.
+    await invia('Page.bringToFront');
 
     // La riga che dice cosa fare, e il piede largo quanto la pagina coi suoi
     // link a destra.
@@ -285,7 +294,7 @@ async function main() {
     })()`);
     verifica('in cima la riga «Scegli cosa confrontare», nel piede la licenza e i link a GitHub e alla posta, a destra del testo',
       guidaEPiede.guidaVisibile && guidaEPiede.guida?.startsWith('Scegli cosa confrontare:') &&
-      JSON.stringify(guidaEPiede.link) === JSON.stringify(['https://github.com/marege08/matchuni', 'mailto:info@matchuni.it?subject=Feedback%20su%20MatchUni']) &&
+      JSON.stringify(guidaEPiede.link) === JSON.stringify(['#dlg-benvenuto', 'https://github.com/marege08/matchuni', 'mailto:info@matchuni.it?subject=Feedback%20su%20MatchUni']) &&
       guidaEPiede.larghezza === guidaEPiede.contenitore && guidaEPiede.aDestra && guidaEPiede.licenza,
       JSON.stringify(guidaEPiede));
 

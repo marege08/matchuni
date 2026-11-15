@@ -2743,6 +2743,11 @@ if (elAiInvia) {
 const CHIAVE_BENVENUTO = 'matchuni-benvenuto-visto';
 const elDlgBenvenuto = document.getElementById('dlg-benvenuto');
 
+elDlgBenvenuto.addEventListener('click', (evento) => {
+  if (evento.target === elDlgBenvenuto) elDlgBenvenuto.close();
+});
+document.getElementById('inizia').addEventListener('click', () => elDlgBenvenuto.close());
+
 /** Show a quiet inline introduction once, without hiding the comparison. */
 function mostraBenvenuto() {
   if (ingresso.has('c')) return;
@@ -2752,17 +2757,16 @@ function mostraBenvenuto() {
   } catch {
     return;
   }
-  elDlgBenvenuto.addEventListener('click', (evento) => {
-    if (evento.target === elDlgBenvenuto) elDlgBenvenuto.close();
-  });
-  document.getElementById('inizia').addEventListener('click', () => elDlgBenvenuto.close());
   document.getElementById('clash-benvenuto').hidden = false;
 }
 
-document.getElementById('clash-chi-siamo').addEventListener('click', (evento) => {
+/** Opens the welcome note on demand: the footer link keeps it reachable after the strip is gone. */
+function apriChiSiamo(evento) {
   evento.preventDefault();
   elDlgBenvenuto.showModal();
-});
+}
+document.getElementById('clash-chi-siamo').addEventListener('click', apriChiSiamo);
+document.getElementById('piede-chi-siamo').addEventListener('click', apriChiSiamo);
 document.getElementById('clash-chiudi').addEventListener('click', () => {
   document.getElementById('clash-benvenuto').hidden = true;
 });
