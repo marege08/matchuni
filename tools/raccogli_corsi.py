@@ -50,6 +50,7 @@ silenzio.
 """
 
 import argparse
+import re
 import sqlite3
 import sys
 import time
@@ -87,7 +88,7 @@ CREATE TABLE IF NOT EXISTS _corsi (
 );                                 -- gruppi: si tiene la prima occorrenza
 
 CREATE TABLE IF NOT EXISTS _fatte (
-    chiave TEXT PRIMARY KEY,       -- "<ateneo>/<corso>/<indagine>"
+    chiave TEXT PRIMARY KEY,       -- "<ateneo>/<corso>/<indagine>/<anno>" (le vecchie senza anno = 2025)
     righe  INTEGER NOT NULL,
     quando TEXT NOT NULL
 );
@@ -100,7 +101,7 @@ CREATE TABLE IF NOT EXISTS _scoperta (
 );
 
 CREATE TABLE IF NOT EXISTS _inesistenti (
-    chiave TEXT PRIMARY KEY,       -- "<ateneo>/<corso>/<indagine>"
+    chiave TEXT PRIMARY KEY,       -- "<ateneo>/<corso>/<indagine>/<anno>" (le vecchie senza anno = 2025)
     quando TEXT NOT NULL           -- schede che AlmaLaurea dice di non avere
 );
 
@@ -329,19 +330,37 @@ def scopri(conn, ateneo, gruppi, pausa, budget, corstipo="L"):
     return nuovi, falliti, False
 
 
+def controlla_anno(html, anno):
+    """La pagina deve dire l'anno chiesto ("anno di laurea: 2025" nel profilo,
+    "anno di indagine: 2025" nell'occupazione). Se AlmaLaurea risponde con
+    un'altra edizione, o senza la riga, la scheda non si salva e si ritenta
+    alla ripartenza (16 nov 2026)."""
+    m = re.search(r"anno di (?:laurea|indagine):\s*(\d{4})", html, re.IGNORECASE)
+    if not m:
+        raise ValueError(f"la pagina non dice l'anno (chiesto {anno})")
+    if m.group(1) != str(anno):
+        raise ValueError(f"la pagina e' dell'anno {m.group(1)}, chiesto {anno}")
+
+
 def scarica_corsi(conn, ateneo, indagini, pausa, budget, max_corsi=None, corstipo="L"):
     """Scarica le schede dei corsi gia' scoperti. Salta quelle in `_fatte` e
     quelle in `_inesistenti`."""
     corsi = list(conn.execute(
         "SELECT gruppo, codice, nome FROM _corsi WHERE ateneo = ? ORDER BY codice",
         (ateneo,)))
-    chiuse = {c for (c,) in conn.execute(
+    # 16 nov 2026: la chiave contiene l'anno, se no una raccolta rilanciata con
+    # l'edizione nuova trova tutto "gia' fatto" e resta sulla vecchia in silenzio.
+    # Le chiavi scritte prima, senza anno, sono tutte dell'edizione 2025 (audit
+    # del 16 nov 2026: nelle tre raccolte c'e' solo l'anno 2025).
+    chiuse = {c if c.count("/") == 3 else c + "/2025" for (c,) in conn.execute(
         "SELECT chiave FROM _fatte UNION SELECT chiave FROM _inesistenti")}
 
     lavoro = []
     for indagine in indagini:
         for gruppo, codice, nome in corsi:
-            chiave = f"{ateneo}/{codice}/{indagine}"
+            anno = genera_corsi({ateneo: [(gruppo, codice, nome)]}, config=indagine,
+                                corstipo=corstipo)[0]["params"]["anno"]
+            chiave = f"{ateneo}/{codice}/{indagine}/{anno}"
             if chiave not in chiuse:
                 lavoro.append((chiave, indagine, gruppo, codice, nome))
     if max_corsi:
@@ -355,7 +374,9 @@ def scarica_corsi(conn, ateneo, indagini, pausa, budget, max_corsi=None, corstip
         combo = genera_corsi({ateneo: [(gruppo, codice, nome)]}, config=indagine,
                              corstipo=corstipo)[0]
         try:
-            righe = raccogli_scheda(scarica_scheda(combo["params"]), combo["params"])
+            html = scarica_scheda(combo["params"])
+            controlla_anno(html, combo["params"]["anno"])
+            righe = raccogli_scheda(html, combo["params"])
             n_righe = salva_righe(conn, righe)
             if n_righe == 0:
                 # HTTP 200 ma nessuna tabella-dato: manutenzione, ondata non
